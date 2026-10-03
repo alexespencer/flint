@@ -1,3 +1,13 @@
 [workspace]
-resolver = "2"
-members = ["spikes/s3-conditional", "spikes/kdf-timing", "spikes/keychain", "spikes/tauri-android/src-tauri"]
+resolver = "3"
+members = ["crates/*"]
+
+[workspace.package]
+version = "0.0.0"
+edition = "2024"
+rust-version = "1.99"
+license = "UNLICENSED"
+publish = false
+
+[workspace.lints.rust]
+unsafe_code = "forbid"

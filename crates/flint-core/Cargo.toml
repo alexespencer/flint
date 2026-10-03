@@ -1,0 +1,11 @@
+[package]
+name = "flint-core"
+description = "Shared types and errors. No I/O; used by every other flint crate."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[lints]
+workspace = true
