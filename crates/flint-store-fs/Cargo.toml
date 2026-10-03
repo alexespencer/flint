@@ -1,0 +1,20 @@
+[package]
+name = "flint-store-fs"
+description = "Local file I/O for one store: raw bytes for sync, a decrypted view for the app."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+camino = "1.2.6"
+flint-core = { version = "0.0.0", path = "../flint-core" }
+flint-crypto = { version = "0.0.0", path = "../flint-crypto" }
+sha2 = "0.11.0"
+tempfile = "3.27.0"
+thiserror = "2.0.21"
+walkdir = "2.5.0"
