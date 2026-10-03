@@ -1,0 +1,3 @@
+[workspace]
+resolver = "2"
+members = ["spikes/s3-conditional", "spikes/kdf-timing", "spikes/keychain", "spikes/tauri-android/src-tauri"]

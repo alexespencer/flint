@@ -1,0 +1,16 @@
+[package]
+name = "spike-tauri-android"
+version = "0.0.0"
+edition = "2021"
+publish = false
+
+[lib]
+name = "spike_tauri_android_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = [] }
+tauri-plugin-keystore = { path = "../plugins/tauri-plugin-keystore" }
