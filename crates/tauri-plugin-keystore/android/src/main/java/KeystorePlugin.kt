@@ -13,6 +13,7 @@ import androidx.biometric.BiometricManager.Authenticators.BIOMETRIC_STRONG
 import androidx.biometric.BiometricPrompt
 import androidx.core.content.ContextCompat
 import androidx.fragment.app.FragmentActivity
+import androidx.lifecycle.Lifecycle
 import app.tauri.annotation.Command
 import app.tauri.annotation.InvokeArg
 import app.tauri.annotation.TauriPlugin
@@ -126,29 +127,39 @@ class KeystorePlugin(private val activity: Activity) : Plugin(activity) {
             return
         }
         host.runOnUiThread {
-            val callback = object : BiometricPrompt.AuthenticationCallback() {
-                override fun onAuthenticationSucceeded(result: BiometricPrompt.AuthenticationResult) {
-                    try {
-                        onOk(result.cryptoObject!!.cipher!!)
-                    } catch (e: Exception) {
-                        invoke.reject(e.toString(), "crypto_failed")
-                    }
-                }
-
-                override fun onAuthenticationError(errorCode: Int, errString: CharSequence) {
-                    // 10 = user cancelled, 13 = negative button ("Use password"), 7/9 = lockout
-                    invoke.reject(errString.toString(), "auth_error_$errorCode")
-                }
-                // onAuthenticationFailed (a wrong finger) keeps the prompt open; nothing to do.
+            // A prompt cannot be shown (or answered) while the app is in the background. Say so at once: a
+            // call nobody answers would leave the Rust side, and every call queued behind it, waiting forever.
+            if (!host.lifecycle.currentState.isAtLeast(Lifecycle.State.RESUMED)) {
+                invoke.reject("the app is not in the foreground", "not_foreground")
+                return@runOnUiThread
             }
-            val info = BiometricPrompt.PromptInfo.Builder()
-                .setTitle(title)
-                .setSubtitle("Flint")
-                .setAllowedAuthenticators(BIOMETRIC_STRONG)
-                .setNegativeButtonText("Use password")
-                .build()
-            BiometricPrompt(host, ContextCompat.getMainExecutor(host), callback)
-                .authenticate(info, BiometricPrompt.CryptoObject(cipher))
+            try {
+                val callback = object : BiometricPrompt.AuthenticationCallback() {
+                    override fun onAuthenticationSucceeded(result: BiometricPrompt.AuthenticationResult) {
+                        try {
+                            onOk(result.cryptoObject!!.cipher!!)
+                        } catch (e: Exception) {
+                            invoke.reject(e.toString(), "crypto_failed")
+                        }
+                    }
+
+                    override fun onAuthenticationError(errorCode: Int, errString: CharSequence) {
+                        // 10 = user cancelled, 13 = negative button ("Use password"), 7/9 = lockout
+                        invoke.reject(errString.toString(), "auth_error_$errorCode")
+                    }
+                    // onAuthenticationFailed (a wrong finger) keeps the prompt open; nothing to do.
+                }
+                val info = BiometricPrompt.PromptInfo.Builder()
+                    .setTitle(title)
+                    .setSubtitle("Flint")
+                    .setAllowedAuthenticators(BIOMETRIC_STRONG)
+                    .setNegativeButtonText("Use password")
+                    .build()
+                BiometricPrompt(host, ContextCompat.getMainExecutor(host), callback)
+                    .authenticate(info, BiometricPrompt.CryptoObject(cipher))
+            } catch (e: Exception) {
+                invoke.reject(e.toString(), "prompt_failed")
+            }
         }
     }
 

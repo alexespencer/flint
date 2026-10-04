@@ -257,7 +257,9 @@
    *  unlock screen may ask for the fingerprint by itself; after the Lock button or an idle lock it does not. */
   async function lock(askNext = false) {
     await flush();
-    if (unsynced) await sync(); // locking stops syncing, so send what is waiting first
+    // Locking stops syncing, so send what is waiting first. Not when the app is going to the background:
+    // the network may already be gone, and a sync that hangs holds up unlocking when the person returns.
+    if (unsynced && !askNext) await sync();
     try {
       await api.lockAll(); // "lock" means the app, not one store
     } finally {

@@ -33,13 +33,34 @@
     password = "";
     error = "";
     biometric = { available: false, enabled: false };
+    let stopWaiting = () => {};
     api.biometricState(id).then((state) => {
       if (store.id !== id) return;
       biometric = state;
-      if (state.enabled && askAtOnce) fingerprint(); // the password is still there as a fallback
+      if (state.enabled && askAtOnce) stopWaiting = askWhenVisible(); // the password is still there as a fallback
       else input?.focus();
     }, () => input?.focus());
+    return () => stopWaiting();
   });
+
+  /**
+   * Asks for the fingerprint, but only while the app is on screen. A phone locks the app as it goes to the
+   * background, which shows this screen before the person is back; a prompt started then cannot appear.
+   * Returns a function that stops waiting.
+   */
+  function askWhenVisible(): () => void {
+    if (document.visibilityState === "visible") {
+      fingerprint();
+      return () => {};
+    }
+    const onChange = () => {
+      if (document.visibilityState !== "visible") return;
+      document.removeEventListener("visibilitychange", onChange);
+      fingerprint();
+    };
+    document.addEventListener("visibilitychange", onChange);
+    return () => document.removeEventListener("visibilitychange", onChange);
+  }
 
   async function fingerprint() {
     busy = true;
@@ -51,7 +72,7 @@
       const kind = errorKind(e);
       if (kind === "keyInvalidated") {
         biometric = { ...biometric, enabled: false };
-        error = `Your fingerprints have changed, so enter your password. You can turn ${method} unlock on again afterwards.`;
+        error = `Your fingerprints have changed, so enter your password. You can then turn ${method} unlock on again.`;
       } else if (kind !== "biometricCancelled") {
         error = errorMessage(e);
       }

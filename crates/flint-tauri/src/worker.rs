@@ -54,11 +54,39 @@ impl<T: 'static> Worker<T> {
     }
 }
 
+/// Runs `job` on its own thread and waits at most `timeout` for its answer. For calls into code that may
+/// never answer (the Android fingerprint prompt): the thread is left behind if it does not, but the caller,
+/// and everything queued behind it on the worker, is not stuck with it.
+#[cfg(any(target_os = "android", test))]
+pub fn answer_within<T: Send + 'static>(
+    timeout: std::time::Duration,
+    job: impl FnOnce() -> T + Send + 'static,
+) -> Option<T> {
+    let (reply, answer) = std::sync::mpsc::channel();
+    thread::spawn(move || {
+        let _ = reply.send(job());
+    });
+    answer.recv_timeout(timeout).ok()
+}
+
 #[cfg(test)]
 mod tests {
     use std::rc::Rc;
 
     use super::*;
+
+    #[test]
+    fn a_call_that_never_answers_gives_up_instead_of_blocking() {
+        use std::time::{Duration, Instant};
+        let started = Instant::now();
+        let stuck = answer_within(Duration::from_millis(100), || {
+            thread::park(); // never answers
+            1
+        });
+        assert_eq!(stuck, None);
+        assert!(started.elapsed() < Duration::from_secs(5));
+        assert_eq!(answer_within(Duration::from_secs(5), || 7), Some(7));
+    }
 
     #[test]
     fn runs_calls_in_order_on_one_thread_with_a_value_that_is_not_send() {

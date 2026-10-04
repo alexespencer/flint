@@ -10,6 +10,10 @@ pub enum Error {
     #[error("the keystore plugin only works on Android")]
     Unsupported,
 
+    /// The Kotlin side did not answer in time (the fingerprint prompt never came back).
+    #[error("the fingerprint prompt did not answer")]
+    Unanswered,
+
     #[cfg(mobile)]
     #[error(transparent)]
     PluginInvoke(#[from] tauri::plugin::mobile::PluginInvokeError),

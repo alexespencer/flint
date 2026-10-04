@@ -114,17 +114,35 @@ mod platform {
 
     fn failure(error: tauri_plugin_keystore::Error) -> CmdError {
         let kind = match error.code() {
-            // 10: dismissed, 13: "Use password" tapped, 7 and 9: too many tries
-            Some("auth_error_10" | "auth_error_13" | "auth_error_7" | "auth_error_9") => {
+            // 10: dismissed, 13: "Use password" tapped, 7 and 9: too many tries, not_foreground: the prompt
+            // could not be shown because the app is in the background
+            Some(
+                "auth_error_10" | "auth_error_13" | "auth_error_7" | "auth_error_9"
+                | "not_foreground",
+            ) => "biometricCancelled",
+            Some("key_invalidated") => "keyInvalidated",
+            None if matches!(error, tauri_plugin_keystore::Error::Unanswered) => {
                 "biometricCancelled"
             }
-            Some("key_invalidated") => "keyInvalidated",
             _ => "other",
         };
         CmdError {
             kind,
             message: error.to_string(),
         }
+    }
+
+    /// How long to wait for the person at the fingerprint prompt.
+    const PROMPT_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(90);
+
+    /// A call that shows the fingerprint prompt, which must come back even if the prompt never does.
+    fn ask<T: Send + 'static>(
+        app: &AppHandle,
+        call: impl FnOnce(&AppHandle) -> Result<T, tauri_plugin_keystore::Error> + Send + 'static,
+    ) -> Result<T, tauri_plugin_keystore::Error> {
+        let app = app.clone();
+        crate::worker::answer_within(PROMPT_TIMEOUT, move || call(&app))
+            .unwrap_or(Err(tauri_plugin_keystore::Error::Unanswered))
     }
 
     pub fn state(app: &AppHandle, _: &Service, id: &StoreId) -> BiometricState {
@@ -145,12 +163,12 @@ mod platform {
             .ok_or_else(|| flint_app_service::Error::Locked(id.clone()))?;
         let mut bytes = keys.key_id().to_be_bytes().to_vec();
         bytes.extend_from_slice(keys.dek().as_bytes());
-        let wrapped = app
-            .keystore()
-            .wrap(DataRequest {
+        let wrapped = ask(app, move |app| {
+            app.keystore().wrap(DataRequest {
                 data: STANDARD.encode(&bytes),
             })
-            .map_err(failure)?;
+        })
+        .map_err(failure)?;
         let mut map = read(app);
         map.insert(id.to_string(), wrapped);
         write(app, &map)
@@ -160,7 +178,7 @@ mod platform {
         let wrapped = read(app)
             .remove(id.as_str())
             .ok_or_else(|| CmdError::other("fingerprint unlock is not set up for this store"))?;
-        let opened = match app.keystore().unwrap(wrapped) {
+        let opened = match ask(app, move |app| app.keystore().unwrap(wrapped)) {
             Ok(opened) => opened,
             Err(e) => {
                 let error = failure(e);
