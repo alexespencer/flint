@@ -23,6 +23,13 @@ pub trait LocalFs {
 
     fn read(&self, path: &StorePath) -> Result<Vec<u8>>;
 
+    /// The first `len` bytes of a file, or all of it if it is shorter. Lets callers classify a big
+    /// file (is it ciphertext or plaintext?) without reading it.
+    fn read_prefix(&self, path: &StorePath, len: usize) -> Result<Vec<u8>>;
+
+    /// Size and modification time of one file.
+    fn entry(&self, path: &StorePath) -> Result<FileEntry>;
+
     /// Creates parent folders as needed. Readers see either the old contents or the new, never a mix,
     /// even if the process dies mid-write.
     fn write_atomic(&self, path: &StorePath, bytes: &[u8]) -> Result<()>;

@@ -20,6 +20,7 @@ mod keyfile;
 mod keys;
 
 pub use error::{Error, Result};
+pub use file::{SNIFF_LEN, is_sealed};
 pub use kdf::KdfParams;
 pub use keyfile::KeyFile;
 pub use keys::{Dek, StoreKeys};

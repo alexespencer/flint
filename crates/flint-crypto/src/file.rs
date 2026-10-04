@@ -28,6 +28,21 @@ const TAG_LEN: usize = 16;
 /// What every sealed file adds to its plaintext.
 pub const OVERHEAD: usize = HEADER_LEN + TAG_LEN;
 
+/// How many leading bytes of a file [`is_sealed`] needs to see.
+pub const SNIFF_LEN: usize = MAGIC.len();
+
+/// Whether a file looks like one of ours (as opposed to a plaintext file someone dropped into the
+/// store folder), from its first [`SNIFF_LEN`] bytes and its total length. This is a classification,
+/// not a check: a damaged or tampered file still "looks sealed" and fails later, in
+/// [`StoreKeys::open`], which is what should happen to it. The version byte is deliberately not
+/// consulted, so a file from a newer format is left alone rather than mistaken for plaintext.
+///
+/// A plaintext file that happens to begin with the bytes `FLNT` and is at least 49 bytes long would
+/// be mistaken for a sealed one; for notes and attachments that is vanishingly unlikely.
+pub fn is_sealed(start: &[u8], file_len: u64) -> bool {
+    file_len >= OVERHEAD as u64 && start.starts_with(&MAGIC)
+}
+
 impl StoreKeys {
     /// Encrypts `plaintext` as the contents of `path`. Output differs on every call (random nonce).
     pub fn seal(&self, path: &StorePath, plaintext: &[u8]) -> Result<Vec<u8>> {
@@ -139,6 +154,63 @@ mod tests {
             keys.open(&path("notes/a.md"), &expected).unwrap(),
             b"hello, flint"
         );
+    }
+
+    #[test]
+    fn is_sealed_tells_ours_from_plaintext() {
+        let keys = test_keys();
+        let sealed = keys.seal(&path("a.md"), b"x").unwrap();
+        assert!(is_sealed(&sealed[..SNIFF_LEN], sealed.len() as u64));
+        assert!(
+            is_sealed(&sealed, sealed.len() as u64),
+            "more than the sniff bytes is fine"
+        );
+        assert!(is_sealed(
+            &keys.seal(&path("a.md"), &vec![0; 10_000]).unwrap(),
+            10_000 + OVERHEAD as u64
+        ));
+
+        for plaintext in [
+            &b""[..],
+            b"# A note\n\nwith text",
+            b"FLN",
+            b"flnt....",
+            &[0u8; 100],
+            "Ünïcode note".as_bytes(),
+        ] {
+            assert!(
+                !is_sealed(
+                    &plaintext[..plaintext.len().min(SNIFF_LEN)],
+                    plaintext.len() as u64
+                ),
+                "{plaintext:?}"
+            );
+        }
+        // our magic, but too short to be a real file
+        assert!(!is_sealed(b"FLNT", 4));
+        assert!(!is_sealed(b"FLNT", OVERHEAD as u64 - 1));
+        assert!(is_sealed(b"FLNT", OVERHEAD as u64));
+    }
+
+    #[test]
+    fn is_sealed_classifies_damaged_and_future_files_as_ours() {
+        let keys = test_keys();
+        let sealed = keys.seal(&path("a.md"), b"contents").unwrap();
+        let mut future = sealed.clone();
+        future[4] = 9;
+        let mut damaged = sealed.clone();
+        *damaged.last_mut().unwrap() ^= 1;
+        for file in [&future, &damaged] {
+            assert!(is_sealed(file, file.len() as u64));
+        }
+        assert!(matches!(
+            keys.open(&path("a.md"), &future),
+            Err(Error::UnsupportedVersion(9))
+        ));
+        assert!(matches!(
+            keys.open(&path("a.md"), &damaged),
+            Err(Error::Decrypt)
+        ));
     }
 
     #[test]

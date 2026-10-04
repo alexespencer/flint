@@ -54,6 +54,43 @@ macro_rules! local_fs_contract {
             }
 
             #[test]
+            fn read_prefix_returns_at_most_the_asked_bytes() {
+                let (fs, _guard) = $make;
+                fs.write_atomic(&p("a.md"), b"0123456789").unwrap();
+                fs.write_atomic(&p("empty.md"), b"").unwrap();
+                assert_eq!(fs.read_prefix(&p("a.md"), 4).unwrap(), b"0123");
+                assert_eq!(fs.read_prefix(&p("a.md"), 10).unwrap(), b"0123456789");
+                assert_eq!(fs.read_prefix(&p("a.md"), 1000).unwrap(), b"0123456789");
+                assert_eq!(fs.read_prefix(&p("a.md"), 0).unwrap(), b"");
+                assert_eq!(fs.read_prefix(&p("empty.md"), 4).unwrap(), b"");
+                assert!(matches!(
+                    fs.read_prefix(&p("nope.md"), 4),
+                    Err(Error::NotFound(_))
+                ));
+            }
+
+            #[test]
+            fn entry_reports_size_and_time_for_one_file() {
+                let (fs, _guard) = $make;
+                let before = std::time::SystemTime::now() - std::time::Duration::from_secs(5);
+                fs.write_atomic(&p("d/a.md"), b"12345").unwrap();
+                let entry = fs.entry(&p("d/a.md")).unwrap();
+                assert_eq!((entry.path.as_str(), entry.size), ("d/a.md", 5));
+                assert!(
+                    entry.modified >= before
+                        && entry.modified
+                            <= std::time::SystemTime::now() + std::time::Duration::from_secs(5)
+                );
+                assert!(matches!(fs.entry(&p("nope.md")), Err(Error::NotFound(_))));
+                assert!(
+                    matches!(fs.entry(&p("d")), Err(Error::NotFound(_))),
+                    "a folder is not a file"
+                );
+                // entry and list agree
+                assert_eq!(fs.list().unwrap()[0], entry);
+            }
+
+            #[test]
             fn missing_files_are_not_found() {
                 let (fs, _guard) = $make;
                 assert!(!fs.exists(&p("nope.md")).unwrap());
@@ -123,6 +160,12 @@ macro_rules! local_fs_contract {
                     ".DS_Store",
                     "folder/.DS_Store",
                     ".flint-tmp-abc",
+                    ".git/config",
+                    ".git/objects/ab/cdef",
+                    ".claude/commands/x.md",
+                    ".hidden-note.md",
+                    "folder/.hidden/inside.md",
+                    "folder/.hidden-too.md",
                 ] {
                     fs.write_atomic(&p(path), b"x").unwrap();
                 }

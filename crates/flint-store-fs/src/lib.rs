@@ -6,9 +6,10 @@
 //!   exactly the ciphertext that is on disk. [`DiskFs`] is the real one, [`MemFs`] the in-memory fake.
 //! - [`EncryptedFs`] wraps a `LocalFs` and seals/opens note contents with the store's keys. The app uses this.
 //!
-//! The folder tree and file names are the store's: a file's path is its S3 key. A few things are never
-//! listed (and so never synced or indexed): `.trash/`, `.obsidian/`, everything in `.store/` except
-//! `key.json`, macOS `.DS_Store` files, and our own `.flint-tmp-*` files from interrupted writes.
+//! The folder tree and file names are the store's: a file's path is its S3 key. **Anything whose name
+//! starts with `.` is hidden: never listed, synced, adopted or indexed** (`.git/`, `.obsidian/`,
+//! `.DS_Store`, our own `.flint-tmp-*` and `.trash/`, and `.store/` except its `key.json`). That is
+//! how Obsidian treats dot-files too, and it keeps a dragged-in vault's `.git` out of sync.
 
 mod contract;
 mod disk;
@@ -20,7 +21,7 @@ mod mem;
 use flint_core::StorePath;
 
 pub use disk::DiskFs;
-pub use encrypted::EncryptedFs;
+pub use encrypted::{AdoptReport, EncryptedFs};
 pub use error::{Error, Result};
 pub use local::{FileEntry, LocalFs};
 pub use mem::MemFs;
@@ -30,24 +31,12 @@ pub const KEY_FILE: &str = ".store/key.json";
 /// Where deleted files go, keeping their relative path.
 pub const TRASH_DIR: &str = ".trash";
 
-const STORE_DIR: &str = ".store";
-const OBSIDIAN_DIR: &str = ".obsidian";
-const DS_STORE: &str = ".DS_Store";
 const TMP_PREFIX: &str = ".flint-tmp-";
 
 /// Whether `path` is part of what sync uploads: notes and attachments, plus `.store/key.json`.
+/// Anything with a hidden (dot-prefixed) component is not.
 pub fn is_sync_path(path: &StorePath) -> bool {
-    if path.as_str() == KEY_FILE {
-        return true;
-    }
-    let mut parts = path.as_str().split('/');
-    if matches!(parts.next(), Some(STORE_DIR | TRASH_DIR | OBSIDIAN_DIR)) {
-        return false;
-    }
-    !path
-        .as_str()
-        .split('/')
-        .any(|part| part == DS_STORE || part.starts_with(TMP_PREFIX))
+    path.as_str() == KEY_FILE || !path.as_str().split('/').any(|part| part.starts_with('.'))
 }
 
 /// Whether `path` is something the app reads and writes through [`EncryptedFs`]: a synced path
@@ -70,13 +59,20 @@ mod tests {
             "a.md",
             "folder/a.md",
             "img/pic.png",
-            ".hidden-note.md",
             "store/key.json",
-            "a/.trashy",
+            "a..b.md",
+            "dot.in.name.md",
         ] {
             assert!(is_sync_path(&p(synced)), "{synced}");
         }
-        for ignored in [
+        for hidden in [
+            ".hidden-note.md",
+            "a/.hidden-note.md",
+            "a/.hidden/note.md",
+            ".git/config",
+            ".git/objects/ab/cdef",
+            ".claude/commands/x.md",
+            ".smart-env/multi/a.ajson",
             ".trash/a.md",
             ".trash",
             ".obsidian/app.json",
@@ -88,7 +84,7 @@ mod tests {
             ".flint-tmp-abc123",
             "folder/.flint-tmp-abc123",
         ] {
-            assert!(!is_sync_path(&p(ignored)), "{ignored}");
+            assert!(!is_sync_path(&p(hidden)), "{hidden}");
         }
     }
 

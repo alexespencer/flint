@@ -7,7 +7,7 @@ use flint_core::{ContentHash, StorePath};
 use sha2::{Digest, Sha256};
 use walkdir::WalkDir;
 
-use crate::{Error, FileEntry, LocalFs, OBSIDIAN_DIR, Result, TMP_PREFIX, TRASH_DIR, is_sync_path};
+use crate::{Error, FileEntry, LocalFs, Result, TMP_PREFIX, is_sync_path};
 
 /// A store folder on disk. Symlinks are not followed when listing; the store folder is assumed to be
 /// the app's own, so a symlink planted inside it that points elsewhere is not defended against.
@@ -36,14 +36,17 @@ impl LocalFs for DiskFs {
             path: path.to_owned(),
             source,
         };
-        // Skip the big folders we never sync without walking into them.
+        // Do not walk into hidden folders (`.git` can hold thousands of files). `.store` is the one
+        // exception, since `.store/key.json` syncs; `is_sync_path` filters the rest of it below.
         let walker = WalkDir::new(&self.root)
             .follow_links(false)
             .into_iter()
             .filter_entry(|e| {
-                !(e.depth() == 1
+                let name = e.file_name().to_string_lossy();
+                !(e.depth() > 0
                     && e.file_type().is_dir()
-                    && [TRASH_DIR, OBSIDIAN_DIR].contains(&&*e.file_name().to_string_lossy()))
+                    && name.starts_with('.')
+                    && !(e.depth() == 1 && name == ".store"))
             });
 
         let mut files = Vec::new();
@@ -85,6 +88,30 @@ impl LocalFs for DiskFs {
 
     fn read(&self, path: &StorePath) -> Result<Vec<u8>> {
         fs::read(self.resolve(path)).map_err(|e| Error::io(path, e))
+    }
+
+    fn read_prefix(&self, path: &StorePath, len: usize) -> Result<Vec<u8>> {
+        let read = || -> io::Result<Vec<u8>> {
+            let mut bytes = Vec::with_capacity(len);
+            File::open(self.resolve(path))?
+                .take(len as u64)
+                .read_to_end(&mut bytes)?;
+            Ok(bytes)
+        };
+        read().map_err(|e| Error::io(path, e))
+    }
+
+    fn entry(&self, path: &StorePath) -> Result<FileEntry> {
+        let meta = fs::metadata(self.resolve(path)).map_err(|e| Error::io(path, e))?;
+        if !meta.is_file() {
+            return Err(Error::NotFound(path.clone()));
+        }
+        let modified = meta.modified().map_err(|e| Error::io(path, e))?;
+        Ok(FileEntry {
+            path: path.clone(),
+            size: meta.len(),
+            modified,
+        })
     }
 
     fn write_atomic(&self, path: &StorePath, bytes: &[u8]) -> Result<()> {

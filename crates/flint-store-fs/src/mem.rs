@@ -48,6 +48,26 @@ impl LocalFs for MemFs {
             .ok_or_else(|| Error::NotFound(path.clone()))
     }
 
+    fn read_prefix(&self, path: &StorePath, len: usize) -> Result<Vec<u8>> {
+        let files = self.files();
+        let (bytes, _) = files
+            .get(path)
+            .ok_or_else(|| Error::NotFound(path.clone()))?;
+        Ok(bytes[..len.min(bytes.len())].to_vec())
+    }
+
+    fn entry(&self, path: &StorePath) -> Result<FileEntry> {
+        let files = self.files();
+        let (bytes, modified) = files
+            .get(path)
+            .ok_or_else(|| Error::NotFound(path.clone()))?;
+        Ok(FileEntry {
+            path: path.clone(),
+            size: bytes.len() as u64,
+            modified: *modified,
+        })
+    }
+
     fn write_atomic(&self, path: &StorePath, bytes: &[u8]) -> Result<()> {
         self.files()
             .insert(path.clone(), (bytes.to_vec(), SystemTime::now()));

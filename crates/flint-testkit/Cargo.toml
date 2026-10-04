@@ -1,0 +1,20 @@
+[package]
+name = "flint-testkit"
+description = "Shared test helpers and the end-to-end gates. Only used from tests."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+flint-core = { version = "0.0.0", path = "../flint-core" }
+flint-crypto = { version = "0.0.0", path = "../flint-crypto" }
+flint-index = { version = "0.0.0", path = "../flint-index" }
+flint-md-parse = { version = "0.0.0", path = "../flint-md-parse" }
+flint-store-fs = { version = "0.0.0", path = "../flint-store-fs" }
+tempfile = "3.27.0"
+walkdir = "2.5.0"

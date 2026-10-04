@@ -367,6 +367,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "flint-testkit"
+version = "0.0.0"
+dependencies = [
+ "flint-core",
+ "flint-crypto",
+ "flint-index",
+ "flint-md-parse",
+ "flint-store-fs",
+ "tempfile",
+ "walkdir",
+]
+
+[[package]]
 name = "fnv"
 version = "1.0.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
