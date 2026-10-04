@@ -1,0 +1,19 @@
+[package]
+name = "flint-sync-state"
+description = "What sync last agreed with the remote, per file: baselines and conflict flags (sync.db)."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+flint-core = { version = "0.0.0", path = "../flint-core" }
+rusqlite = { version = "0.40.2", features = ["bundled-sqlcipher-vendored-openssl"] }
+thiserror = "2.0.21"
+
+[dev-dependencies]
+tempfile = "3.27.0"

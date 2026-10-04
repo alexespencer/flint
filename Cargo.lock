@@ -806,6 +806,28 @@ dependencies = [
 ]
 
 [[package]]
+name = "flint-sync"
+version = "0.0.0"
+dependencies = [
+ "flint-core",
+ "flint-remote",
+ "flint-sync-state",
+ "proptest",
+ "thiserror",
+ "time",
+]
+
+[[package]]
+name = "flint-sync-state"
+version = "0.0.0"
+dependencies = [
+ "flint-core",
+ "rusqlite",
+ "tempfile",
+ "thiserror",
+]
+
+[[package]]
 name = "flint-testkit"
 version = "0.0.0"
 dependencies = [

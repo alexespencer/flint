@@ -1,0 +1,21 @@
+[package]
+name = "flint-sync"
+description = "The sync engine: plans a sync cycle from local, remote and baseline state, and carries it out without losing a write."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+flint-core = { version = "0.0.0", path = "../flint-core" }
+flint-remote = { version = "0.0.0", path = "../flint-remote" }
+flint-sync-state = { version = "0.0.0", path = "../flint-sync-state" }
+thiserror = "2.0.21"
+time = { version = "0.3.55", features = ["formatting", "macros"] }
+
+[dev-dependencies]
+proptest = "1.11.0"
