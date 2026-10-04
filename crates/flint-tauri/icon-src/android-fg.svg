@@ -1,0 +1,22 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024">
+<g transform="translate(512 512) scale(0.82) translate(-512 -512)"><g transform="translate(-22 20)">
+  <defs>
+    <linearGradient id="fire" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#ffc15a"/>
+      <stop offset="1" stop-color="#ff7a1a"/>
+    </linearGradient>
+    <radialGradient id="glow" cx="0.5" cy="0.5" r="0.5">
+      <stop offset="0" stop-color="#ffe9a8" stop-opacity="0.85"/>
+      <stop offset="1" stop-color="#ffb347" stop-opacity="0"/>
+    </radialGradient>
+  </defs>
+  <!-- the F -->
+  <path fill="url(#fire)" d="M348 270h292a24 24 0 0 1 24 24v77a24 24 0 0 1-24 24H470v68h122a24 24 0 0 1 24 24v73a24 24 0 0 1-24 24H470v176a24 24 0 0 1-24 24h-98a24 24 0 0 1-24-24V294a24 24 0 0 1 24-24z"/>
+  <!-- the spark struck off the top bar -->
+  <circle cx="722" cy="250" r="120" fill="url(#glow)"/>
+  <path fill="#fff4d0" d="M722 142c10 74 36 100 110 110-74 10-100 36-110 110-10-74-36-100-110-110 74-10 100-36 110-110z"/>
+  <path fill="#ffd27a" d="M838 168c4 28 14 38 42 42-28 4-38 14-42 42-4-28-14-38-42-42 28-4 38-14 42-42z"/>
+  <circle cx="776" cy="352" r="11" fill="#ffd27a"/>
+  <circle cx="660" cy="150" r="8" fill="#ffd27a"/>
+</g>
+</g></svg>
