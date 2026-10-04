@@ -18,4 +18,4 @@ mod types;
 
 pub use error::{Error, Result};
 pub use state::SyncState;
-pub use types::{Baseline, Conflict, LocalStamp};
+pub use types::{Baseline, Conflict, LocalStamp, SeenVersion};

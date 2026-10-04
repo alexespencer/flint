@@ -3,7 +3,7 @@ use std::path::{Path, PathBuf};
 use flint_core::{ContentHash, StorePath};
 use rusqlite::{Connection, OptionalExtension, params};
 
-use crate::{Baseline, Conflict, Error, LocalStamp, Result};
+use crate::{Baseline, Conflict, Error, LocalStamp, Result, SeenVersion};
 
 const SCHEMA_VERSION: i64 = 1;
 
@@ -17,7 +17,9 @@ CREATE TABLE baselines (
 );
 CREATE TABLE conflicts (
     path      TEXT PRIMARY KEY,    -- a conflict can exist with no baseline (same new name on both devices)
-    copy_path TEXT            -- NULL when there is no other version to keep
+    copy_path TEXT,           -- NULL when there is no other version to keep
+    seen_hash TEXT,           -- the remote version that is in the copy (what the user saw) ...
+    seen_etag TEXT            -- ... which becomes the baseline when the conflict is resolved
 );
 ";
 
@@ -137,10 +139,21 @@ impl SyncState {
 
     /// Holds `path` back from sync until [`resolve`](Self::resolve) or [`clear_conflict`](Self::clear_conflict).
     /// `copy` is where the other side's version was written. Marking an already-flagged path updates the copy.
-    pub fn mark_conflict(&mut self, path: &StorePath, copy: Option<&StorePath>) -> Result<()> {
+    pub fn mark_conflict(
+        &mut self,
+        path: &StorePath,
+        copy: Option<&StorePath>,
+        seen: Option<&SeenVersion>,
+    ) -> Result<()> {
         self.conn.execute(
-            "INSERT INTO conflicts (path, copy_path) VALUES (?1, ?2) ON CONFLICT(path) DO UPDATE SET copy_path = ?2",
-            params![path.as_str(), copy.map(|c| c.as_str())],
+            "INSERT INTO conflicts (path, copy_path, seen_hash, seen_etag) VALUES (?1, ?2, ?3, ?4)
+             ON CONFLICT(path) DO UPDATE SET copy_path = ?2, seen_hash = ?3, seen_etag = ?4",
+            params![
+                path.as_str(),
+                copy.map(|c| c.as_str()),
+                seen.map(|v| v.hash.to_string()),
+                seen.and_then(|v| v.etag.clone())
+            ],
         )?;
         Ok(())
     }
@@ -148,7 +161,7 @@ impl SyncState {
     pub fn conflict(&self, path: &StorePath) -> Result<Option<Conflict>> {
         self.conn
             .query_row(
-                "SELECT path, copy_path FROM conflicts WHERE path = ?1",
+                "SELECT path, copy_path, seen_hash, seen_etag FROM conflicts WHERE path = ?1",
                 [path.as_str()],
                 conflict_from_row,
             )
@@ -160,7 +173,7 @@ impl SyncState {
     pub fn conflicts(&self) -> Result<Vec<Conflict>> {
         let mut statement = self
             .conn
-            .prepare("SELECT path, copy_path FROM conflicts ORDER BY path")?;
+            .prepare("SELECT path, copy_path, seen_hash, seen_etag FROM conflicts ORDER BY path")?;
         let rows = statement.query_map([], conflict_from_row)?;
         rows.map(|row| row?).collect()
     }
@@ -246,13 +259,28 @@ fn baseline_from_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<Result<Baselin
 }
 
 fn conflict_from_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<Result<Conflict>> {
-    let (path, copy): (String, Option<String>) = (row.get(0)?, row.get(1)?);
+    let (path, copy, seen_hash, seen_etag): (
+        String,
+        Option<String>,
+        Option<String>,
+        Option<String>,
+    ) = (row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?);
     Ok((|| {
         let corrupt = |what: String| Error::Corrupt(format!("conflict for {path:?}: {what}"));
         Ok(Conflict {
             path: StorePath::new(&path).map_err(|e| corrupt(e.to_string()))?,
             copy: copy
                 .map(|c| StorePath::new(&c).map_err(|e| corrupt(e.to_string())))
+                .transpose()?,
+            seen: seen_hash
+                .map(|h| {
+                    h.parse::<ContentHash>()
+                        .map(|hash| SeenVersion {
+                            hash,
+                            etag: seen_etag,
+                        })
+                        .map_err(|e| corrupt(e.to_string()))
+                })
                 .transpose()?,
         })
     })())

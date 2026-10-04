@@ -294,6 +294,56 @@ async fn resolving_when_the_remote_moved_again_conflicts_afresh_instead_of_overw
     assert_eq!(phone.read("a.md").as_deref(), Some("merged by hand"));
 }
 
+/// Found by the simulation: the remote moves on *between* the conflict and the user resolving it.
+/// Resolving used to adopt the remote's current version as the baseline, so the user's merge (made from
+/// the version in the conflict copy) overwrote an edit nobody had looked at.
+#[tokio::test]
+async fn resolving_after_the_remote_moved_on_does_not_overwrite_the_edit_nobody_saw() {
+    let world = World::new();
+    let (mut mac, mut phone) = (world.device("Mac"), world.device("Phone"));
+    // the same file is created on both devices, with different text
+    mac.write("c.md", "mac's first");
+    mac.sync().await;
+    phone.write("c.md", "phone's first");
+    let conflict = phone.sync().await;
+    assert_eq!(conflict.conflicts.len(), 1, "{conflict:?}");
+
+    // the Mac builds on the version the phone has a copy of, and uploads it
+    mac.write("c.md", "mac's second, after the conflict");
+    mac.sync().await;
+
+    // the phone's user merges what they saw (their own file and the copy) and resolves
+    phone.write("c.md", "phone's merge of its own file and mac's first");
+    phone.syncer.resolve(&p("c.md")).await.unwrap();
+    let report = phone.sync().await;
+
+    assert!(
+        report.uploaded.iter().all(|u| u.as_str() != "c.md"),
+        "the merge must not be uploaded over an unseen edit: {report:?}"
+    );
+    assert_eq!(
+        world.remote_plain("c.md").await.as_deref(),
+        Some("mac's second, after the conflict"),
+        "still there"
+    );
+    assert_eq!(
+        report.conflicts.len(),
+        1,
+        "both are kept instead: {report:?}"
+    );
+    assert_eq!(
+        phone.read("c.md").as_deref(),
+        Some("phone's merge of its own file and mac's first")
+    );
+    assert!(
+        phone
+            .copies()
+            .iter()
+            .any(|c| phone.read(c).as_deref() == Some("mac's second, after the conflict")),
+        "the unseen edit sits in a new conflict copy"
+    );
+}
+
 #[tokio::test]
 async fn identical_edits_on_both_devices_are_not_a_conflict() {
     let world = World::new();
@@ -868,6 +918,114 @@ async fn key_json_syncs_as_plaintext_and_a_divergence_is_refused_without_a_copy(
         br#"{"version":1,"key_id":1,"wrapped":"B-phone"}"#,
         "neither side overwritten"
     );
+}
+
+// ---- scenarios from the plan -------------------------------------------------------------------
+
+#[tokio::test]
+async fn a_device_that_was_offline_for_a_long_time_merges_cleanly_with_changes_to_other_files() {
+    let world = World::new();
+    let (mut mac, mut phone) = (world.device("Mac"), world.device("Phone"));
+    for name in ["one.md", "two.md", "three.md", "four.md"] {
+        mac.write(name, &format!("{name} v1"));
+    }
+    mac.sync().await;
+    phone.sync().await;
+
+    // the phone goes offline and edits two files and adds one; meanwhile the Mac edits the other two,
+    // deletes one of them, and adds one
+    phone.write("one.md", "one edited on the phone");
+    phone.write("two.md", "two edited on the phone");
+    phone.write("phone-new.md", "new on the phone");
+    mac.write("three.md", "three edited on the Mac");
+    mac.delete("four.md");
+    mac.write("mac-new.md", "new on the Mac");
+    mac.sync().await;
+
+    // reconnecting: no conflicts, because nothing was touched on both sides
+    let report = phone.sync().await;
+    assert!(
+        report.conflicts.is_empty() && report.failed.is_empty() && report.refused.is_empty(),
+        "{report:?}"
+    );
+    mac.sync().await;
+    for device in [&phone, &mac] {
+        assert_eq!(
+            device.read("one.md").as_deref(),
+            Some("one edited on the phone")
+        );
+        assert_eq!(
+            device.read("two.md").as_deref(),
+            Some("two edited on the phone")
+        );
+        assert_eq!(
+            device.read("three.md").as_deref(),
+            Some("three edited on the Mac")
+        );
+        assert_eq!(device.read("four.md"), None);
+        assert_eq!(
+            device.read("phone-new.md").as_deref(),
+            Some("new on the phone")
+        );
+        assert_eq!(device.read("mac-new.md").as_deref(), Some("new on the Mac"));
+    }
+}
+
+#[tokio::test]
+async fn a_password_change_on_one_device_reaches_the_other_without_re_encrypting_any_file() {
+    use flint_crypto::{KdfParams, KeyFile};
+    let fast = KdfParams {
+        m_kib: 8,
+        t: 1,
+        p: 1,
+    };
+    let world = World::new();
+    let (mut mac, mut phone) = (world.device("Mac"), world.device("Phone"));
+
+    // the store's key file, as create-store would have written it, and some notes
+    let key_file = world.key_file.clone();
+    mac.syncer
+        .fs()
+        .write_atomic(&p(KEY_FILE), key_file.to_json().as_bytes())
+        .unwrap();
+    mac.write("a.md", "a note");
+    mac.sync().await;
+    phone.sync().await;
+    let sealed_before = phone.syncer.fs().read(&p("a.md")).unwrap();
+
+    // the Mac changes the password: only key.json changes (the data key is re-wrapped, nothing re-encrypted)
+    let changed = key_file
+        .change_password("pw", "new password", fast)
+        .unwrap();
+    mac.syncer
+        .fs()
+        .write_atomic(&p(KEY_FILE), changed.to_json().as_bytes())
+        .unwrap();
+    let report = mac.sync().await;
+    assert_eq!(paths(&report.uploaded), [KEY_FILE], "{report:?}");
+
+    let report = phone.sync().await;
+    assert_eq!(
+        paths(&report.downloaded),
+        [KEY_FILE],
+        "the new key file arrives; no note moves: {report:?}"
+    );
+    assert_eq!(
+        phone.syncer.fs().read(&p("a.md")).unwrap(),
+        sealed_before,
+        "the note on the phone was not touched"
+    );
+    // the phone can now unlock with the new password, and gets the very same data key
+    let arrived = KeyFile::from_json(
+        &String::from_utf8(phone.syncer.fs().read(&p(KEY_FILE)).unwrap()).unwrap(),
+    )
+    .unwrap();
+    assert!(arrived.unlock("pw").is_err());
+    assert_eq!(
+        arrived.unlock("new password").unwrap().dek().as_bytes(),
+        world.keys.dek().as_bytes()
+    );
+    assert_eq!(phone.read("a.md").as_deref(), Some("a note"));
 }
 
 // ---- cost ---------------------------------------------------------------------------------------

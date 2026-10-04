@@ -27,4 +27,6 @@ pub use plan::{
 pub use report::{ConflictOutcome, ConflictReport, Refusal, SyncReport};
 
 #[cfg(test)]
+mod simulation;
+#[cfg(test)]
 mod testing;

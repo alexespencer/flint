@@ -29,6 +29,13 @@ impl Baseline {
     }
 }
 
+/// The remote version a conflict copy was made from: what the user actually saw.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SeenVersion {
+    pub hash: ContentHash,
+    pub etag: Option<String>,
+}
+
 /// A path that sync is holding back until the user resolves it.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Conflict {
@@ -36,4 +43,7 @@ pub struct Conflict {
     /// Where the other side's version was written, next to the original. `None` when there is no other
     /// version to keep (edited here, deleted there).
     pub copy: Option<StorePath>,
+    /// The remote version that is in `copy`. Resolving makes this the baseline, not whatever the remote
+    /// holds by then: a version the user never saw must not be overwritten by their merge.
+    pub seen: Option<SeenVersion>,
 }

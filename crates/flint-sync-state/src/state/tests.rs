@@ -1,7 +1,7 @@
 use flint_core::{ContentHash, StorePath};
 use tempfile::TempDir;
 
-use crate::{Baseline, Conflict, Error, LocalStamp, SyncState};
+use crate::{Baseline, Conflict, Error, LocalStamp, SeenVersion, SyncState};
 
 fn p(s: &str) -> StorePath {
     StorePath::new(s).unwrap()
@@ -170,6 +170,7 @@ fn a_conflict_can_exist_without_a_baseline() {
     s.mark_conflict(
         &p("new.md"),
         Some(&p("new.conflict-phone-20261004-1200.md")),
+        None,
     )
     .unwrap();
     assert_eq!(s.baseline(&p("new.md")).unwrap(), None);
@@ -177,7 +178,8 @@ fn a_conflict_can_exist_without_a_baseline() {
         s.conflict(&p("new.md")).unwrap(),
         Some(Conflict {
             path: p("new.md"),
-            copy: Some(p("new.conflict-phone-20261004-1200.md"))
+            copy: Some(p("new.conflict-phone-20261004-1200.md")),
+            seen: None,
         })
     );
     assert_eq!(s.conflict(&p("other.md")).unwrap(), None);
@@ -186,11 +188,11 @@ fn a_conflict_can_exist_without_a_baseline() {
 #[test]
 fn conflicts_are_listed_and_marking_again_updates_the_copy() {
     let mut s = state();
-    s.mark_conflict(&p("b.md"), Some(&p("b.conflict-1.md")))
+    s.mark_conflict(&p("b.md"), Some(&p("b.conflict-1.md")), None)
         .unwrap();
-    s.mark_conflict(&p("a.md"), Some(&p("a.conflict-1.md")))
+    s.mark_conflict(&p("a.md"), Some(&p("a.conflict-1.md")), None)
         .unwrap();
-    s.mark_conflict(&p("b.md"), Some(&p("b.conflict-2.md")))
+    s.mark_conflict(&p("b.md"), Some(&p("b.conflict-2.md")), None)
         .unwrap();
     let listed: Vec<_> = s
         .conflicts()
@@ -211,7 +213,7 @@ fn conflicts_are_listed_and_marking_again_updates_the_copy() {
 fn resolving_records_the_new_baseline_and_lifts_the_flag_together() {
     let mut s = state();
     s.record(&baseline("a.md", "old base")).unwrap();
-    s.mark_conflict(&p("a.md"), Some(&p("a.conflict-x.md")))
+    s.mark_conflict(&p("a.md"), Some(&p("a.conflict-x.md")), None)
         .unwrap();
 
     let after = baseline("a.md", "remote's version");
@@ -220,7 +222,7 @@ fn resolving_records_the_new_baseline_and_lifts_the_flag_together() {
     assert_eq!(s.conflict(&p("a.md")).unwrap(), None);
 
     // also for a path that never had a baseline
-    s.mark_conflict(&p("b.md"), Some(&p("b.conflict-x.md")))
+    s.mark_conflict(&p("b.md"), Some(&p("b.conflict-x.md")), None)
         .unwrap();
     s.resolve(&baseline("b.md", "r")).unwrap();
     assert!(s.baseline(&p("b.md")).unwrap().is_some() && s.conflict(&p("b.md")).unwrap().is_none());
@@ -231,7 +233,7 @@ fn clearing_a_conflict_leaves_the_baseline_alone() {
     let mut s = state();
     let b = baseline("a.md", "x");
     s.record(&b).unwrap();
-    s.mark_conflict(&p("a.md"), Some(&p("a.conflict-x.md")))
+    s.mark_conflict(&p("a.md"), Some(&p("a.conflict-x.md")), None)
         .unwrap();
     s.clear_conflict(&p("a.md")).unwrap();
     s.clear_conflict(&p("a.md")).unwrap();
@@ -242,8 +244,10 @@ fn clearing_a_conflict_leaves_the_baseline_alone() {
 #[test]
 fn resolving_one_conflict_does_not_touch_another() {
     let mut s = state();
-    s.mark_conflict(&p("a.md"), Some(&p("a.c.md"))).unwrap();
-    s.mark_conflict(&p("b.md"), Some(&p("b.c.md"))).unwrap();
+    s.mark_conflict(&p("a.md"), Some(&p("a.c.md")), None)
+        .unwrap();
+    s.mark_conflict(&p("b.md"), Some(&p("b.c.md")), None)
+        .unwrap();
     s.resolve(&baseline("a.md", "x")).unwrap();
     assert_eq!(s.conflicts().unwrap().len(), 1);
     assert!(s.conflict(&p("b.md")).unwrap().is_some());
@@ -258,7 +262,7 @@ fn state_survives_closing_and_reopening() {
     {
         let mut s = SyncState::open(&db).unwrap();
         s.record(&baseline("a.md", "x")).unwrap();
-        s.mark_conflict(&p("b.md"), Some(&p("b.conflict.md")))
+        s.mark_conflict(&p("b.md"), Some(&p("b.conflict.md")), None)
             .unwrap();
         // dropped here with no explicit close or flush, as when the process is killed
     }
@@ -410,12 +414,13 @@ fn a_conflict_can_have_no_copy_and_release_drops_the_baseline_with_the_flag() {
     // edited here, deleted there: no other version exists to keep
     let mut s = state();
     s.record(&baseline("a.md", "x")).unwrap();
-    s.mark_conflict(&p("a.md"), None).unwrap();
+    s.mark_conflict(&p("a.md"), None, None).unwrap();
     assert_eq!(
         s.conflict(&p("a.md")).unwrap(),
         Some(Conflict {
             path: p("a.md"),
-            copy: None
+            copy: None,
+            seen: None,
         })
     );
     s.release(&p("a.md")).unwrap();
@@ -427,4 +432,34 @@ fn a_conflict_can_have_no_copy_and_release_drops_the_baseline_with_the_flag() {
         (None, None)
     );
     s.release(&p("never.md")).unwrap();
+}
+
+#[test]
+fn a_conflict_remembers_the_remote_version_the_copy_was_made_from() {
+    let mut s = state();
+    let seen = SeenVersion {
+        hash: ContentHash::of(b"remote then"),
+        etag: Some("\"e-then\"".into()),
+    };
+    s.mark_conflict(&p("a.md"), Some(&p("a.conflict.md")), Some(&seen))
+        .unwrap();
+    let got = s.conflict(&p("a.md")).unwrap().unwrap();
+    assert_eq!(got.seen, Some(seen.clone()));
+    assert_eq!(s.conflicts().unwrap()[0].seen, Some(seen));
+
+    // an ETag may be absent, and marking again replaces what was remembered
+    let newer = SeenVersion {
+        hash: ContentHash::of(b"later"),
+        etag: None,
+    };
+    s.mark_conflict(&p("a.md"), Some(&p("a.conflict-2.md")), Some(&newer))
+        .unwrap();
+    assert_eq!(s.conflict(&p("a.md")).unwrap().unwrap().seen, Some(newer));
+}
+
+#[test]
+fn a_damaged_seen_hash_is_reported() {
+    let s = state();
+    s.conn.execute("INSERT INTO conflicts (path, copy_path, seen_hash) VALUES ('a.md', 'a.c.md', 'not hex')", []).unwrap();
+    assert!(matches!(s.conflicts(), Err(Error::Corrupt(_))));
 }

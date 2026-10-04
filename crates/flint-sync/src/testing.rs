@@ -33,11 +33,13 @@ pub(crate) const NOW_SECS: u64 = 1_791_117_296;
 pub(crate) struct World {
     pub store: Store,
     pub keys: StoreKeys,
+    /// The store's `key.json`, as `create-store` would have written it (password "pw").
+    pub key_file: KeyFile,
 }
 
 impl World {
     pub fn new() -> Self {
-        let (_, keys) = KeyFile::create(
+        let (key_file, keys) = KeyFile::create(
             "pw",
             KdfParams {
                 m_kib: 8,
@@ -49,6 +51,7 @@ impl World {
         Self {
             store: Arc::new(InMemory::new()),
             keys,
+            key_file,
         }
     }
 

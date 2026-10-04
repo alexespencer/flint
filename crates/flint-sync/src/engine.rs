@@ -6,7 +6,7 @@ use flint_core::{ContentHash, StorePath};
 use flint_crypto::{SNIFF_LEN, is_sealed};
 use flint_remote::{ETag, Precondition, RemoteEntry, RemoteStore};
 use flint_store_fs::{FileEntry, KEY_FILE, LocalFs, is_sync_path};
-use flint_sync_state::{Baseline, LocalStamp, SyncState};
+use flint_sync_state::{Baseline, LocalStamp, SeenVersion, SyncState};
 
 use crate::conflict::conflict_copy_path_numbered;
 use crate::plan::{
@@ -100,33 +100,28 @@ impl<L: LocalFs, R: RemoteStore, C: Codec> Syncer<L, R, C> {
     /// The user has dealt with a conflict (edited the local file, or decided to keep or drop it): lets
     /// sync act on the path again.
     ///
-    /// For a diverged file the baseline becomes the remote's *current* version, so the local file counts as
-    /// changed and the next cycle uploads it conditional on that version. If the remote changed again in the
-    /// meantime that upload is refused and a fresh conflict results; nothing is overwritten. For a file edited
-    /// here and deleted there, the baseline is dropped so the local file is uploaded as new.
+    /// For a diverged file the baseline becomes the remote version the conflict copy was made from, **not**
+    /// whatever the remote holds by now. The user's merge is built on what they saw; if the remote has
+    /// moved on since, the next cycle finds both sides changed and keeps both again, instead of
+    /// overwriting an edit nobody has looked at. If the remote has not moved, the merge is uploaded
+    /// conditional on exactly that version. For a file edited here and deleted there, the baseline is
+    /// dropped so the local file is treated as new.
     pub async fn resolve(&mut self, path: &StorePath) -> Result<()> {
         let conflict = self
             .state
             .conflict(path)?
             .ok_or_else(|| Error::NotInConflict(path.clone()))?;
-        if conflict.copy.is_none() {
-            return Ok(self.state.release(path)?);
-        }
-        match self.remote.head(path).await? {
-            None => Ok(self.state.release(path)?),
-            Some(head) => {
-                let hash = match head.sha256 {
-                    Some(hash) => hash,
-                    None => ContentHash::of(&self.remote.get(path).await?.bytes),
-                };
+        match conflict.seen {
+            Some(seen) => {
                 let baseline = Baseline {
                     path: path.clone(),
-                    hash,
-                    etag: head.etag.map(|e| e.as_str().to_owned()),
+                    hash: seen.hash,
+                    etag: seen.etag,
                     stamp: None,
                 };
                 Ok(self.state.resolve(&baseline)?)
             }
+            None => Ok(self.state.release(path)?),
         }
     }
 
@@ -420,7 +415,15 @@ impl<L: LocalFs, R: RemoteStore, C: Codec> Syncer<L, R, C> {
         let copy = self.free_copy_path(path)?;
         self.fs
             .write_atomic(&copy, &self.codec.reseal(path, &copy, &object.bytes)?)?;
-        self.state.mark_conflict(path, Some(&copy))?;
+        // Remember which remote version the copy holds: that is what the user will have seen when they resolve.
+        let seen = SeenVersion {
+            hash: object
+                .entry
+                .sha256
+                .unwrap_or_else(|| ContentHash::of(&object.bytes)),
+            etag: object.entry.etag.as_ref().map(|e| e.as_str().to_owned()),
+        };
+        self.state.mark_conflict(path, Some(&copy), Some(&seen))?;
         report.conflicts.push(ConflictReport {
             path: path.clone(),
             outcome: ConflictOutcome::Diverged { copy },
@@ -436,7 +439,7 @@ impl<L: LocalFs, R: RemoteStore, C: Codec> Syncer<L, R, C> {
     ) -> Result<Outcome> {
         match kind {
             ConflictKind::LocalChangedRemoteDeleted => {
-                self.state.mark_conflict(path, None)?;
+                self.state.mark_conflict(path, None, None)?;
                 report.conflicts.push(ConflictReport {
                     path: path.clone(),
                     outcome: ConflictOutcome::EditedHereDeletedThere,
