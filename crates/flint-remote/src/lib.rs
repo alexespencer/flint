@@ -6,7 +6,7 @@
 //! this crate knows nothing about encryption (the sync engine decides what counts as valid).
 //!
 //! [`ObjectStoreRemote`] implements it over the `object_store` crate, which gives one code path for
-//! AWS S3, self-hosted servers (RustFS) and the in-process emulator used in tests, plus an in-memory
+//! AWS S3, other S3-compatible servers and the in-process emulator used in tests, plus an in-memory
 //! backend. [`ObjectStoreRemote::s3`] refuses plain-`http` endpoints except on localhost.
 //!
 //! Writes are conditional: `put` with [`Precondition::MustNotExist`] or [`Precondition::IfMatch`] is
@@ -53,13 +53,182 @@ mod backends {
         remote_contract!(make(); atomic = false;);
     }
 
-    /// RustFS, MinIO or AWS: see docs/rustfs.md. Run with `-- --ignored` and the FLINT_S3_* variables.
+    /// A real bucket: see docs/s3-testing.md. Run with `-- --ignored` and the FLINT_S3_* variables.
     mod external {
         use super::*;
         async fn make() -> (External, ()) {
             (External::from_env(), ())
         }
-        remote_contract!(make(); atomic = true; #[ignore = "needs a real S3 server: set FLINT_S3_* (docs/rustfs.md)"]);
+        remote_contract!(make(); atomic = true; #[ignore = "needs a real S3 bucket: set FLINT_S3_* (docs/s3-testing.md)"]);
+
+        /// Not a pass/fail test: tries each conditional operation once against the real server and prints
+        /// what it did, so a failing contract run can be explained. Run with `-- --ignored --nocapture`.
+        #[tokio::test]
+        #[ignore = "talks to a real bucket: set FLINT_S3_* (docs/s3-testing.md)"]
+        async fn diagnose_the_backend() {
+            use bytes::Bytes;
+            use flint_core::{ContentHash, StorePath};
+
+            use crate::{ETag, Precondition, RemoteStore, testing::Backend};
+
+            let remote = External::from_env().remote("diagnose");
+            let path = |s: &str| StorePath::new(s).unwrap();
+            let hash = |b: &[u8]| ContentHash::of(b);
+            let put = |name: &'static str, body: &'static [u8], precondition: Precondition| {
+                let remote = &remote;
+                async move {
+                    remote
+                        .put(
+                            &path(name),
+                            Bytes::from_static(body),
+                            &hash(body),
+                            precondition,
+                        )
+                        .await
+                }
+            };
+            let show = |step: &str, expectation: &str, result: String| {
+                println!("DIAG {step:<46} expect {expectation:<22} got {result}")
+            };
+            let brief = |r: &crate::Result<crate::RemoteEntry>| match r {
+                Ok(e) => format!("Ok (etag {:?})", e.etag.as_ref().map(|t| t.as_str())),
+                Err(e) => format!("Err: {e}"),
+            };
+
+            println!("DIAG --- endpoint-level checks");
+            show(
+                "list the (empty) prefix",
+                "Ok []",
+                format!("{:?}", remote.list().await.map(|l| l.len())),
+            );
+            show(
+                "head a missing object",
+                "Ok(None)",
+                format!(
+                    "{:?}",
+                    remote.head(&path("nope.md")).await.map(|o| o.is_some())
+                ),
+            );
+            show(
+                "get a missing object",
+                "Err NotFound",
+                format!("{:?}", remote.get(&path("nope.md")).await.map(|_| ())),
+            );
+
+            println!("DIAG --- writes");
+            let created = put("a.md", b"v1", Precondition::MustNotExist).await;
+            show(
+                "create (If-None-Match: *) on a new key",
+                "Ok",
+                brief(&created),
+            );
+            let etag = created.as_ref().ok().and_then(|e| e.etag.clone());
+            show(
+                "head after create",
+                "Ok(Some)",
+                format!(
+                    "{:?}",
+                    remote
+                        .head(&path("a.md"))
+                        .await
+                        .map(|o| o.map(|e| (e.size, e.sha256.is_some())))
+                ),
+            );
+            show(
+                "create again over the existing key",
+                "Err PreconditionFailed",
+                brief(&put("a.md", b"v2", Precondition::MustNotExist).await),
+            );
+            show(
+                "unconditional overwrite",
+                "Ok",
+                brief(&put("a.md", b"v2", Precondition::Unconditional).await),
+            );
+            show(
+                "If-Match with the OLD (stale) etag",
+                "Err PreconditionFailed",
+                match &etag {
+                    Some(old) => {
+                        brief(&put("a.md", b"v3", Precondition::IfMatch(old.clone())).await)
+                    }
+                    None => "skipped (no etag)".into(),
+                },
+            );
+            let current = remote
+                .head(&path("a.md"))
+                .await
+                .ok()
+                .flatten()
+                .and_then(|e| e.etag);
+            show(
+                "If-Match with the CURRENT etag",
+                "Ok",
+                match &current {
+                    Some(now) => {
+                        brief(&put("a.md", b"v4", Precondition::IfMatch(now.clone())).await)
+                    }
+                    None => "skipped (no etag)".into(),
+                },
+            );
+            show(
+                "If-Match on a key that does not exist",
+                "Err PreconditionFailed",
+                brief(
+                    &put(
+                        "missing.md",
+                        b"x",
+                        Precondition::IfMatch(ETag::new("\"0123456789abcdef0123456789abcdef\"")),
+                    )
+                    .await,
+                ),
+            );
+            show(
+                "what a.md holds now (v4 means conditions worked)",
+                "v4",
+                format!(
+                    "{:?}",
+                    remote
+                        .get(&path("a.md"))
+                        .await
+                        .map(|o| String::from_utf8_lossy(&o.bytes).into_owned())
+                ),
+            );
+
+            println!("DIAG --- deletes");
+            let stale_delete = match &etag {
+                Some(old) => format!("{:?}", remote.delete(&path("a.md"), Some(old)).await),
+                None => "skipped (no etag)".into(),
+            };
+            show(
+                "delete with a stale etag",
+                "Err PreconditionFailed",
+                stale_delete,
+            );
+            show(
+                "delete unconditionally",
+                "Ok",
+                format!("{:?}", remote.delete(&path("a.md"), None).await),
+            );
+            show(
+                "list after cleanup",
+                "Ok 0",
+                format!("{:?}", remote.list().await.map(|l| l.len())),
+            );
+        }
+
+        /// Removes everything the contract tests wrote (`flint-contract/` in the bucket).
+        #[tokio::test]
+        #[ignore = "deletes objects in a real bucket: set FLINT_S3_* (docs/s3-testing.md)"]
+        async fn delete_everything_the_contract_tests_left_behind() {
+            use crate::{RemoteStore, testing::Backend};
+            let sweeper = External::sweeper().remote("");
+            let mut deleted = 0;
+            for entry in sweeper.list().await.unwrap() {
+                sweeper.delete(&entry.path, None).await.unwrap();
+                deleted += 1;
+            }
+            println!("deleted {deleted} objects under flint-contract/");
+        }
     }
 }
 

@@ -105,7 +105,7 @@ impl Backend for S3sFs {
     }
 }
 
-/// A server reachable through environment variables (RustFS, MinIO, or AWS), for the opt-in tests.
+/// A real S3 bucket (or any S3-compatible server) reachable through environment variables, for the opt-in tests.
 ///
 /// `FLINT_S3_ENDPOINT` (omit for AWS), `FLINT_S3_BUCKET`, `FLINT_S3_REGION` (default `us-east-1`),
 /// `FLINT_S3_ACCESS_KEY`, `FLINT_S3_SECRET_KEY`. Every instance works under its own prefix, so
@@ -120,7 +120,7 @@ impl External {
         static COUNTER: AtomicU64 = AtomicU64::new(0);
         let var = |name: &str| std::env::var(name).ok().filter(|v| !v.is_empty());
         let need =
-            |name: &str| var(name).unwrap_or_else(|| panic!("set {name} (see docs/rustfs.md)"));
+            |name: &str| var(name).unwrap_or_else(|| panic!("set {name} (see docs/s3-testing.md)"));
         Self {
             base: format!(
                 "flint-contract/{}-{}-{}",
@@ -140,6 +140,15 @@ impl External {
                 secret_access_key: need("FLINT_S3_SECRET_KEY"),
             },
         }
+    }
+}
+
+impl External {
+    /// The same bucket, scoped to `flint-contract/` itself, so a sweep covers every earlier run.
+    pub fn sweeper() -> Self {
+        let mut external = Self::from_env();
+        external.base = "flint-contract".into();
+        external
     }
 }
 

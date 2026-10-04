@@ -53,7 +53,7 @@ pub trait RemoteStore: Send + Sync {
     ) -> impl Future<Output = Result<()>> + Send;
 
     /// [`list`](Self::list), then a `head` for every entry the listing gave no ETag for. A listing is
-    /// one request per thousand objects, so backends that include ETags (AWS, RustFS) cost nothing
+    /// one request per thousand objects, so backends that include ETags (AWS and most servers) cost nothing
     /// extra; the in-process emulator (`s3s-fs`) omits them and pays one `head` each. An object that
     /// disappears between the two calls is left out.
     fn list_with_etags(&self) -> impl Future<Output = Result<Vec<RemoteEntry>>> + Send {

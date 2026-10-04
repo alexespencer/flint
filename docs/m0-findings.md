@@ -6,7 +6,7 @@ this file is what survives. Status as of 2026-10-03.
 | Spike | Status |
 |---|---|
 | 1. Tauri 2 Android hello-world | **Done**: runs on a Galaxy S24-class phone (SM-S921B, Android 16); editor check passed |
-| 2. Conditional PUT on S3 emulators | Passes on s3s-fs; RustFS parity done in M2 (`docs/rustfs.md`) |
+| 2. Conditional PUT on S3 emulators | Passes on s3s-fs; parity with a real server done in M2 (`docs/s3-testing.md`) |
 | 3. Biometric key storage | macOS **done** (free LAContext gate, no signing); Android **done** (StrongBox, fingerprint per use, cancel path verified); enrolment-change path untested |
 | 4. Argon2id timing | **Done**: Mac and phone measured; params chosen |
 
@@ -35,7 +35,7 @@ Findings that change the plan:
    the global default is untouched).
 4. object_store 0.14 moved `get`, `head`, `put` etc. to the `ObjectStoreExt` trait; import it.
 
-RustFS parity was done in M2, with the RustFS binary and not Docker, including the race tests (see `docs/rustfs.md`): s3s-fs checks preconditions non-atomically, so races are tested on RustFS.
+RustFS parity was done in M2, with the RustFS binary and not Docker, including the race tests (see `docs/s3-testing.md`; RustFS was later retired in favour of the real AWS bucket): s3s-fs checks preconditions non-atomically, so races are tested on RustFS.
 
 ## 4. Argon2id timing (`spikes/kdf-timing`)
 
