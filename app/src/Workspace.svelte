@@ -1,11 +1,13 @@
 <script lang="ts">
   import { onDestroy, onMount } from "svelte";
   import { api, errorKind, errorMessage, isAndroid, summarise, type Hit, type StoreInfo } from "./lib/api";
+  import { autoLockMinutes } from "./lib/settings";
   import { pieces } from "./lib/snippet";
   import { buildTree, isNote, title } from "./lib/tree";
   import ConflictView from "./ConflictView.svelte";
   import Editor from "./Editor.svelte";
   import FileTree from "./FileTree.svelte";
+  import Settings from "./Settings.svelte";
 
   let {
     store,
@@ -28,13 +30,6 @@
   const AUTOSAVE_MS = 700;
   /** How long after the last edit to sync, so a change reaches other devices without a button press. */
   const SYNC_AFTER_EDIT_MS = 5_000;
-  const lockMinutes = () => {
-    try {
-      return Number(localStorage.getItem("flint.autoLockMinutes") ?? 15);
-    } catch {
-      return 15;
-    }
-  };
 
   let files = $state<string[]>([]);
   let expanded = $state(new Set<string>());
@@ -48,6 +43,7 @@
   let statusIsError = $state(false);
   let syncing = $state(false);
   let creating = $state(false);
+  let showSettings = $state(false);
   let newName = $state("");
   let conflictOpen = $state<StoreInfo["conflicts"][number] | null>(null);
   let saveTimer: ReturnType<typeof setTimeout> | undefined;
@@ -303,7 +299,7 @@
     timers = [
       setInterval(() => sync(), SYNC_EVERY_MS),
       setInterval(() => {
-        const minutes = lockMinutes();
+        const minutes = autoLockMinutes();
         if (minutes > 0 && Date.now() - lastActivity > minutes * 60_000) lock();
       }, 10_000),
     ];
@@ -334,6 +330,7 @@
         <strong class="storename">{store.name}</strong>
       {/if}
       <button title="New note" aria-label="New note" onclick={() => (creating = true)}>＋</button>
+      <button class="icon" title="Settings" aria-label="Settings" onclick={() => (showSettings = true)}>⚙</button>
     </header>
     <input
       class="search"
@@ -408,8 +405,9 @@
         <p>In a note, click a <code>[[link]]</code> to follow it (arrow keys move into it to edit it).</p>
       </div>
     {/if}
-    <div class="statusbar" class:error={statusIsError}>
-      <span>{status || (syncing ? "Syncing…" : "")}</span>
+    <div class="statusbar" class:error={statusIsError && !syncing}>
+      {#if syncing}<div class="progress" role="progressbar" aria-label="Syncing"></div>{/if}
+      <span>{syncing ? "Syncing…" : status}</span>
     </div>
   </main>
 
@@ -438,6 +436,10 @@
     {/if}
   </section>
 </div>
+
+{#if showSettings}
+  <Settings {store} {stores} onclose={() => (showSettings = false)} onchange={onchange} />
+{/if}
 
 {#if conflictOpen}
   <ConflictView storeId={store.id} conflict={conflictOpen} onclose={() => (conflictOpen = null)} onresolved={conflictsChanged} />
@@ -502,6 +504,12 @@
     gap: 6px;
     padding: 10px 10px 6px;
     align-items: center;
+  }
+  /* the gear glyph draws small at the normal size */
+  button.icon {
+    font-size: 20px;
+    line-height: 1;
+    padding: 4px 9px;
   }
   .storename {
     flex: 1;
@@ -572,7 +580,38 @@
     justify-items: center;
     gap: 2px;
   }
+  .progress {
+    position: absolute;
+    inset: 0 0 auto 0;
+    height: 2px;
+    overflow: hidden;
+    background: var(--border);
+  }
+  .progress::after {
+    content: "";
+    position: absolute;
+    inset: 0 auto 0 0;
+    width: 35%;
+    background: var(--accent);
+    animation: slide 1.1s ease-in-out infinite;
+  }
+  @keyframes slide {
+    from {
+      transform: translateX(-100%);
+    }
+    to {
+      transform: translateX(290%);
+    }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .progress::after {
+      animation: none;
+      width: 100%;
+      opacity: 0.5;
+    }
+  }
   .statusbar {
+    position: relative;
     padding: 4px 18px;
     border-top: 1px solid var(--border);
     font-size: 12px;
