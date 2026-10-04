@@ -38,6 +38,15 @@ pub enum Error {
     #[error("{0} is not a note path or does not exist")]
     NotANote(StorePath),
 
+    #[error("there is nothing called {0}")]
+    NothingAt(StorePath),
+
+    #[error("{0} has an unresolved conflict; resolve it first")]
+    InConflict(StorePath),
+
+    #[error("a folder cannot be moved into itself")]
+    InsideItself,
+
     #[error(transparent)]
     Registry(#[from] flint_registry::Error),
 

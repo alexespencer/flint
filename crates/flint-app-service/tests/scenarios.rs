@@ -305,6 +305,256 @@ async fn resolving_moves_the_conflict_copy_to_the_trash_on_every_device() {
 }
 
 #[tokio::test]
+async fn deleting_a_note_trashes_it_and_removes_it_from_the_other_device() {
+    let (mac, phone, _) = two_devices().await;
+    mac.service
+        .save_note(&mac.id(), &p("keep.md"), "keep")
+        .unwrap();
+    mac.service
+        .save_note(&mac.id(), &p("old.md"), "needle")
+        .unwrap();
+    mac.sync().await;
+    phone.sync().await;
+
+    assert_eq!(mac.service.delete_path(&mac.id(), &p("old.md")).unwrap(), 1);
+    assert!(!mac.dir().join("old.md").exists());
+    assert!(
+        mac.dir().join(".trash/old.md").exists(),
+        "recoverable, not erased"
+    );
+    assert!(!mac.service.files(&mac.id()).unwrap().contains(&p("old.md")));
+    assert!(
+        mac.service
+            .search(&mac.id(), "needle", 5)
+            .unwrap()
+            .is_empty()
+    );
+
+    mac.sync().await;
+    phone.sync().await;
+    assert!(!phone.dir().join("old.md").exists());
+    assert_eq!(phone.read("keep.md"), "keep");
+}
+
+#[tokio::test]
+async fn moving_a_note_keeps_its_text_and_arrives_at_the_new_path_on_the_other_device() {
+    let (mac, phone, _) = two_devices().await;
+    mac.service
+        .save_note(&mac.id(), &p("idea.md"), "# Idea\nbody")
+        .unwrap();
+    mac.sync().await;
+    phone.sync().await;
+
+    assert_eq!(
+        mac.service
+            .move_path(&mac.id(), &p("idea.md"), &p("Projects/idea.md"))
+            .unwrap(),
+        1
+    );
+    assert_eq!(
+        mac.read("Projects/idea.md"),
+        "# Idea\nbody",
+        "re-encrypted under the new path, so it still opens"
+    );
+    assert!(!mac.dir().join("idea.md").exists());
+    assert_eq!(
+        mac.service.search(&mac.id(), "body", 5).unwrap()[0].path,
+        p("Projects/idea.md")
+    );
+
+    mac.sync().await;
+    phone.sync().await;
+    assert_eq!(phone.read("Projects/idea.md"), "# Idea\nbody");
+    assert!(!phone.dir().join("idea.md").exists());
+
+    // a plain rename too
+    mac.service
+        .move_path(&mac.id(), &p("Projects/idea.md"), &p("Projects/plan.md"))
+        .unwrap();
+    mac.sync().await;
+    phone.sync().await;
+    assert_eq!(phone.read("Projects/plan.md"), "# Idea\nbody");
+}
+
+#[tokio::test]
+async fn moving_and_deleting_a_folder_takes_everything_in_it() {
+    let (mac, phone, _) = two_devices().await;
+    for (path, text) in [
+        ("a/one.md", "1"),
+        ("a/deep/two.md", "2"),
+        ("a/deep/three.md", "3"),
+        ("b.md", "b"),
+    ] {
+        mac.service.save_note(&mac.id(), &p(path), text).unwrap();
+    }
+    mac.sync().await;
+    phone.sync().await;
+
+    assert_eq!(
+        mac.service
+            .move_path(&mac.id(), &p("a"), &p("Archive/a"))
+            .unwrap(),
+        3
+    );
+    assert_eq!(mac.read("Archive/a/deep/two.md"), "2");
+    assert!(
+        !mac.dir().join("a").exists(),
+        "the emptied folders are gone"
+    );
+    mac.sync().await;
+    phone.sync().await;
+    assert_eq!(phone.read("Archive/a/one.md"), "1");
+    assert_eq!(phone.read("Archive/a/deep/three.md"), "3");
+    assert!(!phone.dir().join("a").exists());
+
+    assert_eq!(
+        phone
+            .service
+            .delete_path(&phone.id(), &p("Archive"))
+            .unwrap(),
+        3
+    );
+    assert!(!phone.dir().join("Archive").exists());
+    assert!(phone.dir().join(".trash/Archive/a/one.md").exists());
+    phone.sync().await;
+    mac.sync().await;
+    assert!(!mac.dir().join("Archive").exists());
+    assert_eq!(mac.read("b.md"), "b", "the rest is untouched");
+}
+
+#[tokio::test]
+async fn an_empty_folder_can_be_made_listed_moved_and_stays_on_this_device() {
+    let (mac, phone, _) = two_devices().await;
+    mac.service
+        .create_folder(&mac.id(), &p("Ideas/Later"))
+        .unwrap();
+    assert_eq!(
+        mac.service.folders(&mac.id()).unwrap(),
+        [p("Ideas"), p("Ideas/Later")]
+    );
+    mac.sync().await;
+    phone.sync().await;
+    assert!(
+        phone.service.folders(&phone.id()).unwrap().is_empty(),
+        "a folder with no file is not synced"
+    );
+
+    mac.service
+        .move_path(&mac.id(), &p("Ideas"), &p("Done"))
+        .unwrap();
+    assert_eq!(
+        mac.service.folders(&mac.id()).unwrap(),
+        [p("Done"), p("Done/Later")]
+    );
+    assert_eq!(mac.service.delete_path(&mac.id(), &p("Done")).unwrap(), 0);
+    assert!(mac.service.folders(&mac.id()).unwrap().is_empty());
+}
+
+#[tokio::test]
+async fn risky_moves_and_deletes_are_refused_and_change_nothing() {
+    let (mac, phone, _) = two_devices().await;
+    mac.service
+        .save_note(&mac.id(), &p("a.md"), "start")
+        .unwrap();
+    mac.service
+        .save_note(&mac.id(), &p("b.md"), "other")
+        .unwrap();
+    mac.service
+        .save_note(&mac.id(), &p("dir/x.md"), "x")
+        .unwrap();
+    mac.sync().await;
+    phone.sync().await;
+    let id = mac.id();
+
+    let taken = mac.service.move_path(&id, &p("a.md"), &p("b.md"));
+    assert!(
+        matches!(
+            taken,
+            Err(Error::Local(flint_store_fs::Error::AlreadyExists(_)))
+        ),
+        "{taken:?}"
+    );
+    assert_eq!(mac.read("b.md"), "other", "the target is not overwritten");
+    assert!(matches!(
+        mac.service.move_path(&id, &p("dir"), &p("dir/inner")),
+        Err(Error::InsideItself)
+    ));
+
+    // a folder is not merged into one that already exists
+    mac.service.save_note(&id, &p("other/y.md"), "y").unwrap();
+    let merge = mac.service.move_path(&id, &p("dir"), &p("other"));
+    assert!(
+        matches!(
+            merge,
+            Err(Error::Local(flint_store_fs::Error::AlreadyExists(_)))
+        ),
+        "{merge:?}"
+    );
+    assert_eq!(mac.read("dir/x.md"), "x", "nothing moved");
+    assert_eq!(
+        mac.service
+            .files(&id)
+            .unwrap()
+            .iter()
+            .filter(|f| f.as_str().starts_with("other/"))
+            .count(),
+        1
+    );
+    for hidden in [".trash/x", ".git/config", ".store/key.json"] {
+        assert!(
+            matches!(
+                mac.service.delete_path(&id, &p(hidden)),
+                Err(Error::NotANote(_))
+            ),
+            "{hidden}"
+        );
+        assert!(
+            matches!(
+                mac.service.move_path(&id, &p("a.md"), &p(hidden)),
+                Err(Error::NotANote(_))
+            ),
+            "{hidden}"
+        );
+        assert!(
+            matches!(
+                mac.service.create_folder(&id, &p(hidden)),
+                Err(Error::NotANote(_))
+            ),
+            "{hidden}"
+        );
+    }
+    assert!(matches!(
+        mac.service.delete_path(&id, &p("missing.md")),
+        Err(Error::NothingAt(_))
+    ));
+
+    // a note in an unresolved conflict cannot be moved or deleted, nor can the folder holding it
+    mac.service
+        .save_note(&id, &p("dir/x.md"), "mac edit")
+        .unwrap();
+    phone
+        .service
+        .save_note(&phone.id(), &p("dir/x.md"), "phone edit")
+        .unwrap();
+    mac.sync().await;
+    phone.sync().await;
+    assert_eq!(
+        phone.service.status(&phone.id()).unwrap().conflicts.len(),
+        1
+    );
+    let pid = phone.id();
+    assert!(matches!(
+        phone.service.delete_path(&pid, &p("dir/x.md")),
+        Err(Error::InConflict(_))
+    ));
+    assert!(matches!(
+        phone.service.move_path(&pid, &p("dir"), &p("moved")),
+        Err(Error::InConflict(_))
+    ));
+    assert_eq!(phone.read("dir/x.md"), "phone edit");
+}
+
+#[tokio::test]
 async fn joining_needs_the_right_password_and_an_existing_store() {
     let bucket = InMemoryConnect::new();
 

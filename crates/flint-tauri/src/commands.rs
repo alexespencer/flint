@@ -5,7 +5,7 @@ use flint_core::StorePath;
 use flint_registry::StoreId;
 use tauri::State;
 
-use crate::dto::{BacklinkDto, CmdError, HitDto, NewStoreArgs, StoreDto, SyncDto};
+use crate::dto::{BacklinkDto, CmdError, FolderDto, HitDto, NewStoreArgs, StoreDto, SyncDto};
 use crate::{Service, Worker};
 
 type Result<T> = std::result::Result<T, CmdError>;
@@ -185,6 +185,71 @@ pub async fn files(worker: State<'_, Worker<Service>>, id: String) -> Result<Vec
                     .map(|files| files.iter().map(ToString::to_string).collect())
             })
         })
+        .await
+        .map_err(Into::into)
+}
+
+/// Every folder, empty ones included, with when each was created (milliseconds since 1970).
+#[tauri::command]
+pub async fn folders(worker: State<'_, Worker<Service>>, id: String) -> Result<Vec<FolderDto>> {
+    let id = store_id(&id)?;
+    worker
+        .call(move |svc| {
+            Box::pin(async move {
+                svc.folders_created(&id).map(|dirs| {
+                    dirs.into_iter()
+                        .map(|(path, created)| FolderDto {
+                            path: path.to_string(),
+                            created_ms: created
+                                .duration_since(std::time::UNIX_EPOCH)
+                                .map_or(0, |d| d.as_millis() as u64),
+                        })
+                        .collect()
+                })
+            })
+        })
+        .await
+        .map_err(Into::into)
+}
+
+#[tauri::command]
+pub async fn create_folder(
+    worker: State<'_, Worker<Service>>,
+    id: String,
+    path: String,
+) -> Result<()> {
+    let (id, path) = (store_id(&id)?, self::path(&path)?);
+    worker
+        .call(move |svc| Box::pin(async move { svc.create_folder(&id, &path) }))
+        .await
+        .map_err(Into::into)
+}
+
+/// Moves a file or a folder to the trash; returns how many files went.
+#[tauri::command]
+pub async fn delete_path(
+    worker: State<'_, Worker<Service>>,
+    id: String,
+    path: String,
+) -> Result<usize> {
+    let (id, path) = (store_id(&id)?, self::path(&path)?);
+    worker
+        .call(move |svc| Box::pin(async move { svc.delete_path(&id, &path) }))
+        .await
+        .map_err(Into::into)
+}
+
+/// Renames or moves a file or a folder; returns how many files moved.
+#[tauri::command]
+pub async fn move_path(
+    worker: State<'_, Worker<Service>>,
+    id: String,
+    from: String,
+    to: String,
+) -> Result<usize> {
+    let (id, from, to) = (store_id(&id)?, self::path(&from)?, self::path(&to)?);
+    worker
+        .call(move |svc| Box::pin(async move { svc.move_path(&id, &from, &to) }))
         .await
         .map_err(Into::into)
 }

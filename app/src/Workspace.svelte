@@ -1,10 +1,13 @@
 <script lang="ts">
   import { onDestroy, onMount } from "svelte";
-  import { api, errorKind, errorMessage, isAndroid, summarise, type Hit, type StoreInfo } from "./lib/api";
+  import { api, errorKind, errorMessage, isAndroid, summarise, type FolderInfo, type Hit, type StoreInfo } from "./lib/api";
   import { autoLockMinutes } from "./lib/settings";
   import { pieces } from "./lib/snippet";
-  import { buildTree, isNote, title } from "./lib/tree";
+  import { baseName, buildTree, isNote, isWithin, moveTargets, parentOf, title, type TreeNode } from "./lib/tree";
   import ConflictView from "./ConflictView.svelte";
+  import ContextMenu, { type MenuItem } from "./ContextMenu.svelte";
+  import FolderPicker from "./FolderPicker.svelte";
+  import PathDialog from "./PathDialog.svelte";
   import Editor from "./Editor.svelte";
   import FileTree from "./FileTree.svelte";
   import Settings from "./Settings.svelte";
@@ -42,7 +45,12 @@
   let status = $state("");
   let statusIsError = $state(false);
   let syncing = $state(false);
-  let creating = $state(false);
+  let folderInfos = $state<FolderInfo[]>([]);
+  const folders = $derived(folderInfos.map((f) => f.path));
+  let creating = $state<null | "note" | "folder">(null);
+  let menu = $state<{ x: number; y: number; items: MenuItem[] } | null>(null);
+  let renaming = $state<{ path: string; folder: boolean; links: number } | null>(null);
+  let picking = $state<{ path: string; targets: string[] } | null>(null);
   let showSettings = $state(false);
   let newName = $state("");
   let conflictOpen = $state<StoreInfo["conflicts"][number] | null>(null);
@@ -58,7 +66,7 @@
   let pane = $state<"list" | "note">("list");
   let showInfo = $state(false);
 
-  const tree = $derived(buildTree(files));
+  const tree = $derived(buildTree(files, folders));
   const conflicted = $derived(new Set(store.conflicts.map((c) => c.path)));
   const lockedByConflicts = $derived(store.conflicts.length);
 
@@ -78,6 +86,12 @@
 
   async function loadFiles() {
     files = await api.files(store.id);
+    // The folder list only adds empty folders and creation times: if it cannot be had (or is not in the shape
+    // expected, as in a half-updated dev build), the notes must still show.
+    folderInfos = await api.folders(store.id).then(
+      (list) => (Array.isArray(list) ? list.filter((f) => typeof f?.path === "string") : []),
+      () => [],
+    );
   }
 
   async function loadBacklinks(path: string) {
@@ -178,12 +192,147 @@
     }
   }
 
+  async function createFolder(name: string) {
+    const clean = name.trim().replace(/^\/+|\/+$/g, "");
+    if (!clean) return;
+    try {
+      await api.createFolder(store.id, clean);
+      await loadFiles();
+      revealFolders(`${clean}/x`); // opens the new folder and the ones above it
+    } catch (e) {
+      say(`Could not create the folder ${clean}: ${errorMessage(e)}`, true);
+    }
+  }
+
   async function submitNew(event: Event) {
     event.preventDefault();
     const name = newName;
-    creating = false;
+    const kind = creating;
+    creating = null;
     newName = "";
-    await createNote(name);
+    if (kind === "folder") await createFolder(name);
+    else await createNote(name);
+  }
+
+  /** Starts typing the name of a new note or folder, inside `parent` when given. */
+  function startCreating(kind: "note" | "folder", parent = "") {
+    creating = kind;
+    newName = parent ? `${parent}/` : "";
+    if (parent) expanded = new Set(expanded).add(parent);
+  }
+
+  // ---- the actions on a file or folder ----------------------------------------------------------
+
+  function showMenu(node: TreeNode, x: number, y: number) {
+    const folder = !!node.children;
+    const items: MenuItem[] = [];
+    if (folder) {
+      items.push({ label: "New note here", action: () => startCreating("note", node.path) });
+      items.push({ label: "New folder here", action: () => startCreating("folder", node.path) });
+    }
+    items.push({ label: "Rename…", action: () => askRename(node) });
+    items.push({ label: "Move to…", action: () => showMoveMenu(node, x, y) });
+    items.push({ label: "Move to the trash…", danger: true, action: () => deletePath(node) });
+    menu = { x, y, items };
+  }
+
+  function showNewMenu(event: MouseEvent) {
+    const box = (event.currentTarget as HTMLElement).getBoundingClientRect();
+    menu = {
+      x: box.left,
+      y: box.bottom + 4,
+      items: [
+        { label: "New note", action: () => startCreating("note") },
+        { label: "New folder", action: () => startCreating("folder") },
+      ],
+    };
+  }
+
+  /** The most recently created folders to move to, and a way to pick from all of them when there are more. */
+  const MOVE_SHORTLIST = 5;
+
+  function showMoveMenu(node: TreeNode, x: number, y: number) {
+    const targets = moveTargets(node.path, folderInfos);
+    const items: MenuItem[] = targets.slice(0, MOVE_SHORTLIST).map((target) => ({
+      label: target || "Top level",
+      action: () => moveInto(node.path, target),
+    }));
+    if (targets.length > MOVE_SHORTLIST) {
+      items.push({ label: `More folders… (${targets.length - MOVE_SHORTLIST})`, action: () => (picking = { path: node.path, targets }) });
+    }
+    if (items.length === 0) items.push({ label: "No other folder: make one with ＋", disabled: true, action: () => {} });
+    menu = { x, y, items };
+  }
+
+  function moveInto(path: string, folder: string) {
+    return doMove(path, folder ? `${folder}/${baseName(path)}` : baseName(path));
+  }
+
+  async function askRename(node: TreeNode) {
+    const folder = !!node.children;
+    // links name a note, so renaming one is what can break them
+    const links = folder ? 0 : await api.backlinks(store.id, node.path).then((b) => b.length, () => 0);
+    renaming = { path: node.path, folder, links };
+  }
+
+  function nameProblem(value: string): string | null {
+    return value.includes("/") ? "A name cannot contain “/”. Use Move to… to put it in another folder." : null;
+  }
+
+  function renameWarning(value: string): string | null {
+    if (!renaming || renaming.folder || renaming.links === 0) return null;
+    if (title(value) === title(renaming.path)) return null;
+    const n = renaming.links;
+    return `${n} note${n === 1 ? " links" : "s link"} to this one by its name. Links are not updated when a note is renamed, so ${n === 1 ? "that link" : "those links"} will stop working.`;
+  }
+
+  async function renameTo(name: string) {
+    const target = renaming;
+    renaming = null;
+    if (!target) return;
+    // a note renamed without typing an extension stays a .md
+    const file = !target.folder && isNote(target.path) && !name.includes(".") ? `${name}.md` : name;
+    const parent = parentOf(target.path);
+    await doMove(target.path, parent ? `${parent}/${file}` : file);
+  }
+
+  async function doMove(from: string, to: string) {
+    if (!(await flush())) return;
+    try {
+      const reopen = current && isWithin(current.path, from) ? to + current.path.slice(from.length) : null;
+      const count = await api.movePath(store.id, from, to);
+      if (reopen) {
+        current = null;
+        dirty = false;
+      }
+      await loadFiles();
+      revealFolders(`${to}/x`);
+      markUnsynced();
+      if (reopen) await openNote(reopen);
+      say(`Moved ${count} file${count === 1 ? "" : "s"}. Changes not synced yet`);
+    } catch (e) {
+      say(`Could not move ${from}: ${errorMessage(e)}`, true);
+    }
+  }
+
+  async function deletePath(node: TreeNode) {
+    const inside = node.children ? files.filter((f) => isWithin(f, node.path)).length : 1;
+    const what = node.children ? `the folder "${node.name}"${inside ? ` and its ${inside} file${inside === 1 ? "" : "s"}` : ""}` : `"${title(node.path)}"`;
+    if (!confirm(`Move ${what} to the trash?\n\nIt is removed from your other devices too, but kept in the .trash folder on each one.`)) return;
+    if (!(await flush())) return;
+    try {
+      const count = await api.deletePath(store.id, node.path);
+      if (current && isWithin(current.path, node.path)) {
+        current = null;
+        dirty = false;
+        pane = "list";
+      }
+      await loadFiles();
+      markUnsynced();
+      say(`Moved ${count} file${count === 1 ? "" : "s"} to the trash. Changes not synced yet`);
+    } catch (e) {
+      say(`Could not delete ${node.path}: ${errorMessage(e)}`, true);
+    }
   }
 
   function searchSoon() {
@@ -329,7 +478,7 @@
       {:else}
         <strong class="storename">{store.name}</strong>
       {/if}
-      <button title="New note" aria-label="New note" onclick={() => (creating = true)}>＋</button>
+      <button title="New note or folder" aria-label="New note or folder" onclick={showNewMenu}>＋</button>
       <button class="icon" title="Settings" aria-label="Settings" onclick={() => (showSettings = true)}>⚙</button>
     </header>
     <input
@@ -343,7 +492,13 @@
     {#if creating}
       <form onsubmit={submitNew} class="new">
         <!-- svelte-ignore a11y_autofocus -->
-        <input placeholder="Note name (folders: a/b)" bind:value={newName} autofocus onblur={() => !newName && (creating = false)} />
+        <input
+          placeholder={creating === "folder" ? "Folder name (nested: a/b)" : "Note name (in a folder: a/b)"}
+          bind:value={newName}
+          autofocus
+          onblur={() => !newName && (creating = null)}
+          onkeydown={(e) => e.key === "Escape" && ((creating = null), (newName = ""))}
+        />
       </form>
     {/if}
     <nav>
@@ -360,7 +515,7 @@
           </button>
         {/each}
       {:else}
-        <FileTree nodes={tree} selected={current?.path ?? null} {expanded} {conflicted} ontoggle={toggle} onopen={openNote} />
+        <FileTree nodes={tree} selected={current?.path ?? null} {expanded} {conflicted} ontoggle={toggle} onopen={openNote} onmenu={showMenu} />
         {#if files.length === 0}
           <p class="dim pad">
             No notes yet. Make one with ＋, or drop markdown files into<br /><code>{store.folder}</code>
@@ -436,6 +591,36 @@
     {/if}
   </section>
 </div>
+
+{#if menu}
+  <ContextMenu x={menu.x} y={menu.y} items={menu.items} onclose={() => (menu = null)} />
+{/if}
+
+{#if renaming}
+  <PathDialog
+    title={renaming.folder ? "Rename folder" : "Rename"}
+    help="Only the name changes; it stays in the same folder."
+    initial={baseName(renaming.path)}
+    confirmLabel="Rename"
+    reject={nameProblem}
+    warn={renameWarning}
+    onconfirm={renameTo}
+    onclose={() => (renaming = null)}
+  />
+{/if}
+
+{#if picking}
+  <FolderPicker
+    title={`Move “${baseName(picking.path)}” to…`}
+    targets={picking.targets}
+    onpick={(folder) => {
+      const path = picking!.path;
+      picking = null;
+      moveInto(path, folder);
+    }}
+    onclose={() => (picking = null)}
+  />
+{/if}
 
 {#if showSettings}
   <Settings {store} {stores} onclose={() => (showSettings = false)} onchange={onchange} />

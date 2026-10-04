@@ -1,6 +1,7 @@
 use std::fs::{self, File};
 use std::io::{self, Read, Write};
 use std::path::{Path, PathBuf};
+use std::time::SystemTime;
 
 use camino::Utf8Path;
 use flint_core::{ContentHash, StorePath};
@@ -27,6 +28,131 @@ impl DiskFs {
 
     fn resolve(&self, path: &StorePath) -> PathBuf {
         self.root.join(path.as_str())
+    }
+
+    /// Every folder in the store, including empty ones (which no file lists), as paths relative to the
+    /// root, sorted. Hidden folders (`.git`, `.store`, `.trash`) and everything inside them are left out.
+    pub fn list_dirs(&self) -> Result<Vec<StorePath>> {
+        Ok(self
+            .list_dirs_with_created()?
+            .into_iter()
+            .map(|(path, _)| path)
+            .collect())
+    }
+
+    /// [`list_dirs`](Self::list_dirs), each with when the folder was created on this device (its modification
+    /// time where the file system keeps no creation time, as on some Android file systems).
+    pub fn list_dirs_with_created(&self) -> Result<Vec<(StorePath, SystemTime)>> {
+        let mut dirs = Vec::new();
+        let walker = WalkDir::new(&self.root)
+            .follow_links(false)
+            .min_depth(1)
+            .into_iter()
+            .filter_entry(|e| !e.file_name().to_string_lossy().starts_with('.'));
+        for entry in walker {
+            let entry = entry.map_err(|e| {
+                let path = e.path().unwrap_or(&self.root).to_owned();
+                Error::Io {
+                    path,
+                    source: e.into(),
+                }
+            })?;
+            if !entry.file_type().is_dir() {
+                continue;
+            }
+            let relative = entry
+                .path()
+                .strip_prefix(&self.root)
+                .expect("walked entries are under the root");
+            let relative = Utf8Path::from_path(relative)
+                .ok_or_else(|| Error::NonUtf8Name(relative.to_owned()))?;
+            let meta = entry.metadata().map_err(|e| Error::Io {
+                path: entry.path().to_owned(),
+                source: e.into(),
+            })?;
+            let created = meta
+                .created()
+                .or_else(|_| meta.modified())
+                .map_err(|e| Error::Io {
+                    path: entry.path().to_owned(),
+                    source: e,
+                })?;
+            dirs.push((StorePath::new(relative.as_str())?, created));
+        }
+        dirs.sort();
+        Ok(dirs)
+    }
+
+    /// Whether `path` is a folder.
+    pub fn is_dir(&self, path: &StorePath) -> bool {
+        self.resolve(path).is_dir()
+    }
+
+    /// Makes a folder (and any missing parents). An error if something that is not a folder is in the way.
+    pub fn create_dir(&self, path: &StorePath) -> Result<()> {
+        fs::create_dir_all(self.resolve(path)).map_err(|e| Error::io(path, e))
+    }
+
+    /// Tidies up after a file was removed: removes the folder it was in if that is now empty, then that
+    /// folder's parent if it is now empty too, and so on, stopping at the first one that holds anything. Does
+    /// not touch empty folders elsewhere, so a folder someone made on purpose survives.
+    pub fn remove_empty_parents(&self, path: &StorePath) -> Result<()> {
+        for ancestor in path.as_path().ancestors().skip(1) {
+            if ancestor.as_str().is_empty() {
+                break;
+            }
+            let dir = self.root.join(ancestor.as_str());
+            let Ok(entries) = fs::read_dir(&dir) else {
+                continue; // already gone: carry on upwards
+            };
+            let mut only_clutter = true;
+            for entry in entries {
+                let entry = entry.map_err(|e| Error::io(path, e))?;
+                if entry.file_name() != ".DS_Store" {
+                    only_clutter = false;
+                }
+            }
+            if !only_clutter {
+                break;
+            }
+            let _ = fs::remove_file(dir.join(".DS_Store"));
+            fs::remove_dir(&dir).map_err(|e| Error::io(path, e))?;
+        }
+        Ok(())
+    }
+
+    /// Tidies up after the files in a folder were moved or deleted: removes `path` and the folders
+    /// inside it that are now empty, bottom up. A folder that still holds anything (a note, an attachment,
+    /// a hidden folder such as `.git`) is left alone, and so are its parents. A stray `.DS_Store` does not
+    /// count as something held.
+    pub fn remove_empty_dirs(&self, path: &StorePath) -> Result<()> {
+        fn prune(dir: &Path) -> io::Result<bool> {
+            for entry in fs::read_dir(dir)? {
+                let entry = entry?;
+                // hidden folders (`.git`) are never touched, empty or not
+                if entry.file_type()?.is_dir()
+                    && !entry.file_name().to_string_lossy().starts_with('.')
+                {
+                    prune(&entry.path())?;
+                }
+            }
+            let mut only_clutter = true;
+            for entry in fs::read_dir(dir)? {
+                if entry?.file_name() != ".DS_Store" {
+                    only_clutter = false;
+                }
+            }
+            if only_clutter {
+                let _ = fs::remove_file(dir.join(".DS_Store"));
+                fs::remove_dir(dir)?;
+            }
+            Ok(only_clutter)
+        }
+        let dir = self.resolve(path);
+        if !dir.is_dir() {
+            return Ok(());
+        }
+        prune(&dir).map(|_| ()).map_err(|e| Error::io(path, e))
     }
 }
 
@@ -268,5 +394,106 @@ mod tests {
         let big = vec![0xAB; 5 * 1024 * 1024];
         fs.write_atomic(&p("big.bin"), &big).unwrap();
         assert_eq!(fs.hash(&p("big.bin")).unwrap(), ContentHash::of(&big));
+    }
+}
+
+#[cfg(test)]
+mod folder_tests {
+    use super::*;
+
+    fn p(s: &str) -> StorePath {
+        StorePath::new(s).unwrap()
+    }
+
+    #[test]
+    fn folders_are_listed_empty_ones_included_and_hidden_ones_left_out() {
+        let dir = tempfile::tempdir().unwrap();
+        let fs = DiskFs::new(dir.path());
+        fs.write_atomic(&p("a/b/note.md"), b"x").unwrap();
+        fs.create_dir(&p("empty/inner")).unwrap();
+        fs.create_dir(&p(".git/objects")).unwrap();
+        fs.create_dir(&p(".trash/old")).unwrap();
+        fs.write_atomic(&p("top.md"), b"x").unwrap();
+        let dirs: Vec<_> = fs
+            .list_dirs()
+            .unwrap()
+            .iter()
+            .map(|d| d.to_string())
+            .collect();
+        assert_eq!(dirs, ["a", "a/b", "empty", "empty/inner"]);
+        assert!(fs.is_dir(&p("a/b")) && !fs.is_dir(&p("top.md")) && !fs.is_dir(&p("nope")));
+    }
+
+    #[test]
+    fn removing_a_file_can_tidy_its_emptied_parents_and_only_those() {
+        let dir = tempfile::tempdir().unwrap();
+        let fs = DiskFs::new(dir.path());
+        fs.write_atomic(&p("a/b/c/note.md"), b"x").unwrap();
+        fs.write_atomic(&p("a/other.md"), b"x").unwrap();
+        fs.create_dir(&p("a/b/made-on-purpose")).unwrap();
+        fs.remove(&p("a/b/c/note.md")).unwrap();
+        fs.remove_empty_parents(&p("a/b/c/note.md")).unwrap();
+        assert!(!dir.path().join("a/b/c").exists(), "c was emptied");
+        assert!(
+            dir.path().join("a/b/made-on-purpose").exists(),
+            "so b stays, and so does what was made on purpose"
+        );
+
+        fs.write_atomic(&p("x/y/z.md"), b"x").unwrap();
+        fs.remove(&p("x/y/z.md")).unwrap();
+        fs.remove_empty_parents(&p("x/y/z.md")).unwrap();
+        assert!(
+            !dir.path().join("x").exists(),
+            "the whole emptied chain goes"
+        );
+        assert!(dir.path().join("a/other.md").exists());
+        fs.remove_empty_parents(&p("top-level.md")).unwrap(); // nothing above a root file: fine
+    }
+
+    #[test]
+    fn folders_come_with_when_they_were_created() {
+        let dir = tempfile::tempdir().unwrap();
+        let fs = DiskFs::new(dir.path());
+        fs.create_dir(&p("first")).unwrap();
+        std::thread::sleep(std::time::Duration::from_millis(30));
+        fs.create_dir(&p("second")).unwrap();
+        let listed = fs.list_dirs_with_created().unwrap();
+        let time = |name: &str| listed.iter().find(|(d, _)| d.as_str() == name).unwrap().1;
+        assert!(time("second") > time("first"));
+        assert!(time("first") > SystemTime::now() - std::time::Duration::from_secs(60));
+    }
+
+    #[test]
+    fn a_folder_cannot_be_made_where_a_file_is() {
+        let dir = tempfile::tempdir().unwrap();
+        let fs = DiskFs::new(dir.path());
+        fs.write_atomic(&p("a"), b"x").unwrap();
+        assert!(matches!(fs.create_dir(&p("a/b")), Err(Error::Io { .. })));
+    }
+
+    #[test]
+    fn emptied_folders_are_removed_but_never_ones_that_still_hold_something() {
+        let dir = tempfile::tempdir().unwrap();
+        let fs = DiskFs::new(dir.path());
+        fs.create_dir(&p("gone/deeper/deepest")).unwrap();
+        std::fs::write(dir.path().join("gone/.DS_Store"), b"junk").unwrap();
+        fs.create_dir(&p("kept/sub")).unwrap();
+        fs.write_atomic(&p("kept/sub/note.md"), b"x").unwrap();
+        fs.create_dir(&p("repo/.git")).unwrap();
+
+        fs.remove_empty_dirs(&p("gone")).unwrap();
+        fs.remove_empty_dirs(&p("kept")).unwrap();
+        fs.remove_empty_dirs(&p("repo")).unwrap();
+        fs.remove_empty_dirs(&p("never-existed")).unwrap();
+
+        assert!(
+            !dir.path().join("gone").exists(),
+            "empty, with a .DS_Store, goes"
+        );
+        assert!(dir.path().join("kept/sub/note.md").exists());
+        assert!(
+            dir.path().join("repo/.git").exists(),
+            "a hidden folder inside counts as held"
+        );
     }
 }

@@ -9,6 +9,7 @@
     conflicted,
     ontoggle,
     onopen,
+    onmenu,
     depth = 0,
   }: {
     nodes: TreeNode[];
@@ -17,6 +18,8 @@
     conflicted: Set<string>;
     ontoggle: (path: string) => void;
     onopen: (path: string) => void;
+    /** The person asked for the actions on a file or folder (right-click, or its ⋯ button). */
+    onmenu: (node: TreeNode, x: number, y: number) => void;
     depth?: number;
   } = $props();
 </script>
@@ -25,10 +28,13 @@
   {#each nodes as node (node.children ? `d:${node.path}` : `f:${node.path}`)}
     <li>
       {#if node.children}
-        <button class="row" onclick={() => ontoggle(node.path)} aria-expanded={expanded.has(node.path)}>
-          <span class="chev">{expanded.has(node.path) ? "▾" : "▸"}</span>
-          {node.name}
-        </button>
+        <div class="line" oncontextmenu={(e) => (e.preventDefault(), onmenu(node, e.clientX, e.clientY))} role="presentation">
+          <button class="row" onclick={() => ontoggle(node.path)} aria-expanded={expanded.has(node.path)}>
+            <span class="chev">{expanded.has(node.path) ? "▾" : "▸"}</span>
+            {node.name}
+          </button>
+          <button class="more" aria-label="Actions for {node.name}" onclick={(e) => onmenu(node, e.clientX, e.clientY)}>⋯</button>
+        </div>
         {#if expanded.has(node.path)}
           <FileTree
             nodes={node.children}
@@ -37,23 +43,27 @@
             {conflicted}
             {ontoggle}
             {onopen}
+            {onmenu}
             depth={depth + 1}
           />
         {/if}
       {:else}
-        <button
-          class="row"
-          class:selected={selected === node.path}
-          class:attachment={!isNote(node.path)}
-          class:copy={isConflictCopy(node.path)}
-          disabled={!isNote(node.path)}
-          onclick={() => onopen(node.path)}
-          title={node.path}
-        >
-          <span class="chev"></span>
-          {isConflictCopy(node.path) ? `${title(node.path).replace(/\.conflict-.*$/, "")} (conflict copy)` : title(node.path)}
-          {#if conflicted.has(node.path)}<span class="badge" title="Conflict">!</span>{/if}
-        </button>
+        <div class="line" oncontextmenu={(e) => (e.preventDefault(), onmenu(node, e.clientX, e.clientY))} role="presentation">
+          <button
+            class="row"
+            class:selected={selected === node.path}
+            class:attachment={!isNote(node.path)}
+            class:copy={isConflictCopy(node.path)}
+            disabled={!isNote(node.path)}
+            onclick={() => onopen(node.path)}
+            title={node.path}
+          >
+            <span class="chev"></span>
+            {isConflictCopy(node.path) ? `${title(node.path).replace(/\.conflict-.*$/, "")} (conflict copy)` : title(node.path)}
+            {#if conflicted.has(node.path)}<span class="badge" title="Conflict">!</span>{/if}
+          </button>
+          <button class="more" aria-label="Actions for {node.name}" onclick={(e) => onmenu(node, e.clientX, e.clientY)}>⋯</button>
+        </div>
       {/if}
     </li>
   {/each}
@@ -65,10 +75,34 @@
     margin: 0;
     padding: 0;
   }
-  .row {
+  .line {
     display: flex;
     align-items: center;
-    width: 100%;
+  }
+  .more {
+    flex: none;
+    background: none;
+    border: none;
+    padding: 2px 8px;
+    color: var(--fg-dim);
+    opacity: 0;
+  }
+  .line:hover .more,
+  .more:focus-visible {
+    opacity: 1;
+  }
+  /* no hover on a touch screen, so the button is always there */
+  @media (hover: none), (max-width: 720px) {
+    .more {
+      opacity: 1;
+      padding: 6px 12px;
+    }
+  }
+  .row {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    align-items: center;
     background: none;
     border: none;
     border-radius: 5px;

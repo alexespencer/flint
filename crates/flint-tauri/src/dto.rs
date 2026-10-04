@@ -146,6 +146,13 @@ pub struct HitDto {
 
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
+pub struct FolderDto {
+    pub path: String,
+    pub created_ms: u64,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct BacklinkDto {
     pub from: String,
 }
@@ -209,6 +216,8 @@ impl From<flint_app_service::Error> for CmdError {
             E::StoreExists => "storeExists",
             E::NoSuchStore => "noSuchStore",
             E::PasswordChangedElsewhere => "passwordChangedElsewhere",
+            E::InConflict(_) => "inConflict",
+            E::Local(flint_store_fs::Error::AlreadyExists(_)) => "alreadyExists",
             _ => "other",
         };
         Self {

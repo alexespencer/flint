@@ -10,6 +10,7 @@
 mod connect;
 mod error;
 mod indexing;
+mod manage;
 mod service;
 
 pub use connect::{Connect, InMemoryConnect, S3Connect};

@@ -1438,6 +1438,7 @@ dependencies = [
  "flint-crypto",
  "flint-index",
  "flint-registry",
+ "flint-store-fs",
  "flint-sync",
  "futures",
  "gethostname",

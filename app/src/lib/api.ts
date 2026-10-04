@@ -41,6 +41,12 @@ export interface BiometricState {
   enabled: boolean;
 }
 
+export interface FolderInfo {
+  path: string;
+  /** When the folder was created on this device, in milliseconds since 1970. */
+  createdMs: number;
+}
+
 export interface Hit {
   path: string;
   snippet: string;
@@ -62,7 +68,7 @@ export interface NewStore {
 
 /** An error from the Rust side: a stable `kind` to branch on and a message to show. */
 export interface CommandError {
-  kind: "locked" | "biometricCancelled" | "keyInvalidated" | "wrongPassword" | "storeExists" | "noSuchStore" | "passwordChangedElsewhere" | "other";
+  kind: "locked" | "inConflict" | "alreadyExists" | "biometricCancelled" | "keyInvalidated" | "wrongPassword" | "storeExists" | "noSuchStore" | "passwordChangedElsewhere" | "other";
   message: string;
 }
 
@@ -90,6 +96,10 @@ export const api = {
   sync: (id: string) => invoke<SyncResult>("sync", { id }),
   resolve: (id: string, path: string) => invoke<void>("resolve", { id, path }),
   files: (id: string) => invoke<string[]>("files", { id }),
+  folders: (id: string) => invoke<FolderInfo[]>("folders", { id }),
+  createFolder: (id: string, path: string) => invoke<void>("create_folder", { id, path }),
+  deletePath: (id: string, path: string) => invoke<number>("delete_path", { id, path }),
+  movePath: (id: string, from: string, to: string) => invoke<number>("move_path", { id, from, to }),
   readNote: (id: string, path: string) => invoke<string>("read_note", { id, path }),
   saveNote: (id: string, path: string, text: string) => invoke<void>("save_note", { id, path, text }),
   search: (id: string, query: string) => invoke<Hit[]>("search", { id, query }),

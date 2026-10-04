@@ -31,6 +31,7 @@ flint-app-service = { version = "0.0.0", path = "../flint-app-service" }
 flint-core = { version = "0.0.0", path = "../flint-core" }
 flint-index = { version = "0.0.0", path = "../flint-index" }
 flint-registry = { version = "0.0.0", path = "../flint-registry" }
+flint-store-fs = { version = "0.0.0", path = "../flint-store-fs" }
 flint-sync = { version = "0.0.0", path = "../flint-sync" }
 futures = "0.3.34"
 gethostname = "1.1.0"

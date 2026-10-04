@@ -275,6 +275,11 @@ impl<S: SecretStore, C: Connect> AppService<S, C> {
         let adopted = fs.adopt_plaintext(self.quiet_period)?;
         let mut syncer = self.syncer(&record, keys.clone())?;
         let report = syncer.sync().await?;
+        // files that sync moved to the trash (deleted on another device) may leave empty folders behind
+        let disk = DiskFs::new(&record.folder);
+        for trashed in &report.trashed_local {
+            disk.remove_empty_parents(trashed)?;
+        }
         let indexed = self.refresh_index(&record, &keys, &fs)?;
         Ok(SyncOutcome {
             adopted,
@@ -430,7 +435,7 @@ impl<S: SecretStore, C: Connect> AppService<S, C> {
         }
     }
 
-    fn unlocked(&self, id: &StoreId) -> Result<(StoreRecord, StoreKeys)> {
+    pub(crate) fn unlocked(&self, id: &StoreId) -> Result<(StoreRecord, StoreKeys)> {
         let record = self.registry.get(id)?.clone();
         let keys = self
             .registry
@@ -467,7 +472,7 @@ impl<S: SecretStore, C: Connect> AppService<S, C> {
         Ok(Index::open(&path, keys.index_key())?)
     }
 
-    fn refresh_index(
+    pub(crate) fn refresh_index(
         &self,
         record: &StoreRecord,
         keys: &StoreKeys,
