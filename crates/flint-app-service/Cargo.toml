@@ -1,0 +1,29 @@
+[package]
+name = "flint-app-service"
+description = "What every shell (CLI, Tauri app) calls: create, join, unlock and sync stores, read and write notes."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+bytes = "1.12.1"
+flint-core = { version = "0.0.0", path = "../flint-core" }
+flint-crypto = { version = "0.0.0", path = "../flint-crypto" }
+flint-index = { version = "0.0.0", path = "../flint-index" }
+flint-registry = { version = "0.0.0", path = "../flint-registry" }
+flint-remote = { version = "0.0.0", path = "../flint-remote" }
+flint-store-fs = { version = "0.0.0", path = "../flint-store-fs" }
+flint-sync = { version = "0.0.0", path = "../flint-sync" }
+flint-sync-state = { version = "0.0.0", path = "../flint-sync-state" }
+object_store = { version = "0.14.2", default-features = false }
+thiserror = "2.0.21"
+
+[dev-dependencies]
+flint-testkit = { version = "0.0.0", path = "../flint-testkit" }
+tempfile = "3.27.0"
+tokio = { version = "1.53.2", features = ["rt", "macros"] }

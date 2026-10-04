@@ -1,0 +1,22 @@
+[package]
+name = "flint-registry"
+description = "The list of stores on this device, which one is active, and the secrets kept for them."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+flint-crypto = { version = "0.0.0", path = "../flint-crypto" }
+getrandom = "0.4.3"
+serde = { version = "1.0.229", features = ["derive"] }
+serde_json = "1.0.151"
+tempfile = "3.27.0"
+thiserror = "2.0.21"
+
+[target.'cfg(target_os = "macos")'.dependencies]
+security-framework = "3.7.0"
