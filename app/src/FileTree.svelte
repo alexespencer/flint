@@ -1,6 +1,6 @@
 <script lang="ts">
   import FileTree from "./FileTree.svelte";
-  import { isNote, title, type TreeNode } from "./lib/tree";
+  import { isConflictCopy, isNote, title, type TreeNode } from "./lib/tree";
 
   let {
     nodes,
@@ -45,12 +45,13 @@
           class="row"
           class:selected={selected === node.path}
           class:attachment={!isNote(node.path)}
+          class:copy={isConflictCopy(node.path)}
           disabled={!isNote(node.path)}
           onclick={() => onopen(node.path)}
           title={node.path}
         >
           <span class="chev"></span>
-          {title(node.path)}
+          {isConflictCopy(node.path) ? `${title(node.path).replace(/\.conflict-.*$/, "")} (conflict copy)` : title(node.path)}
           {#if conflicted.has(node.path)}<span class="badge" title="Conflict">!</span>{/if}
         </button>
       {/if}
@@ -83,6 +84,10 @@
   .row.selected {
     background: var(--bg-active);
     font-weight: 600;
+  }
+  .row.copy {
+    color: var(--fg-dim);
+    font-style: italic;
   }
   .row:disabled {
     color: var(--fg-dim);

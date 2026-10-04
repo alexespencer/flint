@@ -80,7 +80,7 @@
       <button class="primary" onclick={resolve} disabled={busy}>Mark as resolved</button>
     </footer>
     <p class="dim pad hint">
-      Resolving keeps what is on the left. The other version's file stays in the folder until you delete it.
+      Resolving keeps what is on the left. The other version's file is moved to the folder's .trash, here and on your other devices.
     </p>
   </div>
 </div>

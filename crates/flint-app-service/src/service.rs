@@ -294,11 +294,24 @@ impl<S: SecretStore, C: Connect> AppService<S, C> {
     }
 
     /// Lets sync act on a conflicted path again, once the user has dealt with it (see
-    /// [`Syncer::resolve`]).
+    /// [`Syncer::resolve`]), and tidies up: the other version's conflict copy is moved to `.trash`. The
+    /// copy is an ordinary file that synced to the other devices, so the next sync removes it from
+    /// them too (they trash their own). Nothing is lost: the copy's text is in the trash.
     pub async fn resolve(&self, id: &StoreId, path: &StorePath) -> Result<()> {
         let (record, keys) = self.unlocked(id)?;
-        let mut syncer = self.syncer(&record, keys)?;
-        Ok(syncer.resolve(path).await?)
+        let mut syncer = self.syncer(&record, keys.clone())?;
+        let copy = syncer.state().conflict(path)?.and_then(|c| c.copy);
+        syncer.resolve(path).await?;
+        let disk = DiskFs::new(&record.folder);
+        if let Some(copy) = copy {
+            match disk.trash(&copy) {
+                Ok(_) | Err(flint_store_fs::Error::NotFound(_)) => {} // already gone: fine
+                Err(e) => return Err(e.into()),
+            }
+        }
+        let fs = EncryptedFs::new(disk, keys.clone());
+        self.refresh_index(&record, &keys, &fs)?;
+        Ok(())
     }
 
     /// What is going on with a store. Works while the store is locked.

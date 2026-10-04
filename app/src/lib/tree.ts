@@ -36,6 +36,11 @@ function sort(node: TreeNode) {
   node.children?.forEach(sort);
 }
 
+/** A copy that sync made of the other device's version of a conflicted note (`Note.conflict-<device>-<time>.md`). */
+export function isConflictCopy(path: string): boolean {
+  return /\.conflict-[^/]*$/.test(path);
+}
+
 export function isNote(path: string): boolean {
   return path.toLowerCase().endsWith(".md");
 }

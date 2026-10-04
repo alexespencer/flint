@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { buildTree, isNote, title } from "./tree";
+import { buildTree, isConflictCopy, isNote, title } from "./tree";
 
 describe("buildTree", () => {
   it("nests folders, puts folders first, and sorts ignoring case", () => {
@@ -21,6 +21,15 @@ describe("buildTree", () => {
       ["x", true],
       ["x", false],
     ]);
+  });
+});
+
+describe("conflict copies", () => {
+  it("are recognised by their name", () => {
+    expect(isConflictCopy("Test.conflict-Mac-20261004-1730.md")).toBe(true);
+    expect(isConflictCopy("folder/Test.conflict-Phone-20261004-1730-2.md")).toBe(true);
+    expect(isConflictCopy("conflict-notes.md")).toBe(false);
+    expect(isConflictCopy("a.conflict/b.md")).toBe(false);
   });
 });
 

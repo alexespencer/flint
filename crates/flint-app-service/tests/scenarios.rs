@@ -241,6 +241,70 @@ async fn a_conflict_is_surfaced_kept_and_resolved() {
 }
 
 #[tokio::test]
+async fn resolving_moves_the_conflict_copy_to_the_trash_on_every_device() {
+    let (mac, phone, _) = two_devices().await;
+    mac.service
+        .save_note(&mac.id(), &p("a.md"), "start")
+        .unwrap();
+    mac.sync().await;
+    phone.sync().await;
+    mac.service
+        .save_note(&mac.id(), &p("a.md"), "mac edit")
+        .unwrap();
+    phone
+        .service
+        .save_note(&phone.id(), &p("a.md"), "phone edit")
+        .unwrap();
+    mac.sync().await;
+    phone.sync().await; // the phone loses and holds the mac's version as a copy
+    let copy = phone.service.status(&phone.id()).unwrap().conflicts[0]
+        .copy
+        .clone()
+        .unwrap();
+
+    // the copy is an ordinary file, so the mac (which won) gets it too
+    phone.sync().await;
+    mac.sync().await;
+    assert!(mac.dir().join(copy.as_str()).exists());
+
+    phone
+        .service
+        .save_note(&phone.id(), &p("a.md"), "merged")
+        .unwrap();
+    phone
+        .service
+        .resolve(&phone.id(), &p("a.md"))
+        .await
+        .unwrap();
+    assert!(
+        !phone.dir().join(copy.as_str()).exists(),
+        "moved out of the folder"
+    );
+    assert!(
+        phone.dir().join(".trash").join(copy.as_str()).exists(),
+        "into the trash, not deleted"
+    );
+    assert!(!phone.service.files(&phone.id()).unwrap().contains(&copy));
+    assert!(
+        phone
+            .service
+            .search(&phone.id(), "mac edit", 5)
+            .unwrap()
+            .is_empty(),
+        "and out of the index"
+    );
+
+    phone.sync().await;
+    mac.sync().await;
+    assert!(
+        !mac.dir().join(copy.as_str()).exists(),
+        "the other device's copy goes too"
+    );
+    assert!(mac.dir().join(".trash").join(copy.as_str()).exists());
+    assert_eq!(mac.read("a.md"), "merged");
+}
+
+#[tokio::test]
 async fn joining_needs_the_right_password_and_an_existing_store() {
     let bucket = InMemoryConnect::new();
 
