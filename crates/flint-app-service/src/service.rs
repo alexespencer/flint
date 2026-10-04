@@ -234,6 +234,11 @@ impl<S: SecretStore, C: Connect> AppService<S, C> {
         Ok(self.registry.lock(id)?)
     }
 
+    /// Forgets the keys of every store on this device.
+    pub fn lock_all(&self) -> Result<()> {
+        Ok(self.registry.lock_all()?)
+    }
+
     /// Changes the store's password. Syncs first, so the change is made to the newest key file, then
     /// uploads the new one conditionally. If another device changed the password at the same moment,
     /// nothing is changed here ([`Error::PasswordChangedElsewhere`]). No file is re-encrypted, and other

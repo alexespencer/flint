@@ -113,6 +113,15 @@ pub async fn lock(worker: State<'_, Worker<Service>>, id: String) -> Result<()> 
         .map_err(Into::into)
 }
 
+/// Locks every store: what the app's Lock button, auto-lock and going to the background all do.
+#[tauri::command]
+pub async fn lock_all(worker: State<'_, Worker<Service>>) -> Result<()> {
+    worker
+        .call(|svc| Box::pin(async move { svc.lock_all() }))
+        .await
+        .map_err(Into::into)
+}
+
 #[tauri::command]
 pub async fn switch_store(worker: State<'_, Worker<Service>>, id: String) -> Result<()> {
     let id = store_id(&id)?;

@@ -82,6 +82,7 @@ export const api = {
   joinStore: (args: NewStore) => invoke<string>("join_store", { args }),
   unlock: (id: string, password: string) => invoke<void>("unlock", { id, password }),
   lock: (id: string) => invoke<void>("lock", { id }),
+  lockAll: () => invoke<void>("lock_all"),
   switchStore: (id: string) => invoke<void>("switch_store", { id }),
   forgetStore: (id: string) => invoke<void>("forget_store", { id }),
   changePassword: (id: string, old: string, next: string) =>

@@ -165,12 +165,16 @@ impl<S: SecretStore> Registry<S> {
         let Some(bytes) = self.secrets.get(&keys_key(id))? else {
             return Ok(None);
         };
-        let Some((key_id, dek)) = bytes.split_at_checked(4) else {
+        let parsed = bytes.split_at_checked(4).and_then(|(key_id, dek)| {
+            Some((
+                <[u8; 4]>::try_from(key_id).ok()?,
+                <[u8; DEK_LEN]>::try_from(dek).ok()?,
+            ))
+        });
+        let Some((key_id, dek)) = parsed else {
+            // not what we wrote: forget it, so the store is locked everywhere, including `is_unlocked`
+            self.secrets.delete(&keys_key(id))?;
             return Ok(None);
-        };
-        let (Ok(key_id), Ok(dek)) = (<[u8; 4]>::try_from(key_id), <[u8; DEK_LEN]>::try_from(dek))
-        else {
-            return Ok(None); // not what we wrote: treat the store as locked
         };
         Ok(Some(StoreKeys::new(
             u32::from_be_bytes(key_id),
@@ -179,7 +183,7 @@ impl<S: SecretStore> Registry<S> {
     }
 
     pub fn is_unlocked(&self, id: &StoreId) -> Result<bool> {
-        Ok(self.unlocked_keys(id)?.is_some())
+        self.secrets.exists(&keys_key(id))
     }
 
     pub fn lock(&self, id: &StoreId) -> Result<()> {

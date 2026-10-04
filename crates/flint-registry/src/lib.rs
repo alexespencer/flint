@@ -5,13 +5,15 @@
 //! Keystore-backed implementation on Android, a fake in tests. The password is never kept anywhere.
 
 mod error;
+#[cfg(target_os = "macos")]
+mod keychain;
 mod registry;
 mod secrets;
 mod types;
 
 pub use error::{Error, Result};
-pub use registry::Registry;
 #[cfg(target_os = "macos")]
-pub use secrets::KeychainSecrets;
+pub use keychain::KeychainSecrets;
+pub use registry::Registry;
 pub use secrets::{MemorySecrets, SecretStore};
 pub use types::{RemoteSettings, StoreId, StoreRecord};

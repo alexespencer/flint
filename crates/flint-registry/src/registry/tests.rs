@@ -134,7 +134,12 @@ fn damaged_cached_keys_count_as_locked() {
     let work = record("Work", "/f/work");
     registry.add(work.clone()).unwrap();
     secrets.set(&format!("{}/keys", work.id), b"short").unwrap();
+    assert!(registry.is_unlocked(&work.id).unwrap(), "present, so far");
     assert!(registry.unlocked_keys(&work.id).unwrap().is_none());
+    assert!(
+        !registry.is_unlocked(&work.id).unwrap(),
+        "and gone once found to be damaged"
+    );
 }
 
 #[test]

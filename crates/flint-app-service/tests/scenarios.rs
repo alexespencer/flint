@@ -297,6 +297,29 @@ async fn a_locked_store_does_nothing_until_the_password_is_given() {
 }
 
 #[tokio::test]
+async fn lock_all_locks_every_store_on_the_device() {
+    let (mut mac, _, _) = two_devices().await;
+    let mut second = mac.new_store("other");
+    second.name = "Second".into();
+    second.folder = mac.folder.path().join("Second");
+    second.remote.prefix = "second".into();
+    let second_id = mac.service.create_store(second).await.unwrap();
+    let first_id = mac.id();
+    assert!(mac.service.status(&first_id).unwrap().unlocked);
+    assert!(mac.service.status(&second_id).unwrap().unlocked);
+
+    mac.service.lock_all().unwrap();
+
+    assert!(!mac.service.status(&first_id).unwrap().unlocked);
+    assert!(!mac.service.status(&second_id).unwrap().unlocked);
+    mac.service.unlock(&second_id, "other").await.unwrap();
+    assert!(
+        !mac.service.status(&first_id).unwrap().unlocked,
+        "unlocking one leaves the other locked"
+    );
+}
+
+#[tokio::test]
 async fn a_password_change_on_one_device_keeps_the_other_working() {
     let (mac, phone, _) = two_devices().await;
     mac.service.save_note(&mac.id(), &p("a.md"), "one").unwrap();

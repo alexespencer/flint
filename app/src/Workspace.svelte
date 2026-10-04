@@ -254,7 +254,7 @@
     await flush();
     if (unsynced) await sync(); // locking stops syncing, so send what is waiting first
     try {
-      await api.lock(store.id);
+      await api.lockAll(); // "lock" means the app, not one store
     } finally {
       current = null;
       pane = "list";
@@ -366,7 +366,9 @@
     <footer>
       <button onclick={() => sync(true)} disabled={syncing}>{syncing ? "Syncing…" : "Sync now"}</button>
       <button onclick={() => leaveThen(onadd)}>Add store</button>
-      <button onclick={lock}>Lock</button>
+      <button onclick={lock} title="Lock every store; each needs its password{isAndroid ? " or fingerprint" : ""} to open again">
+        {stores.length > 1 ? "Lock all" : "Lock"}
+      </button>
     </footer>
   </aside>
 

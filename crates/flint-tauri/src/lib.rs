@@ -109,6 +109,7 @@ pub fn run() {
             commands::join_store,
             commands::unlock,
             commands::lock,
+            commands::lock_all,
             commands::switch_store,
             commands::forget_store,
             commands::change_password,
