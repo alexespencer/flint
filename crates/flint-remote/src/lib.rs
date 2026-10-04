@@ -405,15 +405,19 @@ mod emulator_and_failures {
     }
 
     #[tokio::test]
-    async fn a_missing_bucket_is_an_error() {
-        // (s3s-fs creates a bucket folder on first write, so only the listing is checked here; real S3
-        // refuses writes to a missing bucket as well)
+    async fn a_missing_bucket_is_named_as_such_by_the_listing_that_starts_every_sync_cycle() {
+        // Only a listing carries the server's `NoSuchBucket` code: object_store drops the response body when it
+        // turns a 404 into `NotFound` (get, head, delete), so those cannot tell a wrong bucket from a missing
+        // object. That is why every sync cycle starts with a `list`: a wrong bucket name stops it right there.
         let server = S3sFs::spawn().await;
         let mut config = server.config("store");
         config.bucket = "no-such-bucket".into();
         let remote = ObjectStoreRemote::s3(&config).unwrap();
-        let result = remote.list().await;
-        assert!(result.is_err(), "{result:?}");
+        assert!(matches!(remote.list().await, Err(Error::NoSuchBucket(_))));
+        assert!(matches!(
+            remote.list_with_etags().await,
+            Err(Error::NoSuchBucket(_))
+        ));
     }
 
     #[tokio::test]

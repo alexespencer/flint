@@ -76,7 +76,11 @@ impl<S: ObjectStore> ObjectStoreRemote<S> {
         };
         match self.store.get_opts(&self.key(path), options).await {
             Ok(result) => Ok(Some(result)),
-            Err(object_store::Error::NotFound { .. }) => Ok(None),
+            Err(error @ object_store::Error::NotFound { .. })
+                if !crate::error::is_missing_bucket(&error) =>
+            {
+                Ok(None)
+            }
             Err(error) => Err(Error::from_backend(path, error)),
         }
     }
@@ -195,7 +199,11 @@ impl<S: ObjectStore> RemoteStore for ObjectStoreRemote<S> {
         }
         match self.store.delete(&self.key(path)).await {
             Ok(()) => Ok(()),
-            Err(object_store::Error::NotFound { .. }) if expect.is_none() => Ok(()),
+            Err(error @ object_store::Error::NotFound { .. })
+                if expect.is_none() && !crate::error::is_missing_bucket(&error) =>
+            {
+                Ok(())
+            }
             Err(error) => Err(Error::from_backend(path, error)),
         }
     }

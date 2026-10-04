@@ -13,6 +13,13 @@ pub enum Error {
     #[error("{0} is not in the expected state on the remote (precondition failed)")]
     PreconditionFailed(StorePath),
 
+    /// The server says the bucket does not exist. Usually the wrong *name*: some services show both a bucket
+    /// name and a long ID, and the S3 API wants the name.
+    #[error(
+        "the bucket does not exist: {0} (check that FLINT_S3_BUCKET / the bucket setting is the bucket's name, not its ID)"
+    )]
+    NoSuchBucket(String),
+
     /// Wrong credentials, or a bucket policy that forbids the call.
     #[error("access denied by the remote: {0}")]
     AccessDenied(String),
@@ -50,10 +57,17 @@ fn is_access_failure(error: &object_store::Error) -> bool {
         || ACCESS_CODES.iter().any(|code| text.contains(code))
 }
 
+/// A 404 can mean "no such object" or "no such bucket"; only the S3 error code in the response says which.
+pub(crate) fn is_missing_bucket(error: &object_store::Error) -> bool {
+    format!("{error:?}").contains("NoSuchBucket")
+}
+
 impl Error {
     /// Classifies a backend error that is not about one particular object (a failed listing).
     pub(crate) fn from_backend_listing(error: object_store::Error) -> Self {
-        if is_access_failure(&error) {
+        if is_missing_bucket(&error) {
+            Self::NoSuchBucket(error.to_string())
+        } else if is_access_failure(&error) {
             Self::AccessDenied(error.to_string())
         } else {
             Self::Backend(error)
@@ -62,6 +76,9 @@ impl Error {
 
     /// Classifies a backend error that happened while working on `path`.
     pub(crate) fn from_backend(path: &StorePath, error: object_store::Error) -> Self {
+        if is_missing_bucket(&error) {
+            return Self::NoSuchBucket(error.to_string());
+        }
         match error {
             object_store::Error::NotFound { .. } => Self::NotFound(path.clone()),
             object_store::Error::AlreadyExists { .. }
