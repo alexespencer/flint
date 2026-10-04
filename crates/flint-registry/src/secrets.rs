@@ -1,7 +1,9 @@
 use std::collections::BTreeMap;
 use std::sync::Mutex;
 
-use crate::{Error, Result};
+#[cfg(target_os = "macos")]
+use crate::Error;
+use crate::Result;
 
 /// Somewhere to keep small secrets safely. Keys are plain names like `<store id>/s3-secret`.
 pub trait SecretStore: Send + Sync {

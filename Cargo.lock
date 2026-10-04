@@ -1381,6 +1381,7 @@ dependencies = [
  "thiserror 2.0.21",
  "tokio",
  "url",
+ "webpki-root-certs",
  "zeroize",
 ]
 
@@ -1429,18 +1430,23 @@ dependencies = [
 name = "flint-tauri"
 version = "0.0.0"
 dependencies = [
+ "base64 0.23.1",
  "dirs",
  "flint-app-service",
  "flint-core",
+ "flint-crypto",
  "flint-index",
  "flint-registry",
  "flint-sync",
  "futures",
  "gethostname",
  "serde",
+ "serde_json",
  "tauri",
  "tauri-build",
  "tauri-plugin-dialog",
+ "tauri-plugin-keystore",
+ "tempfile",
  "tokio",
 ]
 
@@ -5055,6 +5061,16 @@ dependencies = [
  "thiserror 2.0.21",
  "toml 1.1.6+spec-1.1.0",
  "url",
+]
+
+[[package]]
+name = "tauri-plugin-keystore"
+version = "0.0.0"
+dependencies = [
+ "serde",
+ "tauri",
+ "tauri-plugin",
+ "thiserror 2.0.21",
 ]
 
 [[package]]

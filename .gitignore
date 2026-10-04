@@ -9,4 +9,4 @@ target/
 
 # frontend build output and generated Tauri schemas
 app/dist/
-crates/flint-tauri/gen/
+crates/flint-tauri/gen/schemas/

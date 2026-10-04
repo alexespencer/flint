@@ -38,10 +38,10 @@ pub async fn list_stores(worker: State<'_, Worker<Service>>) -> Result<Vec<Store
         .map_err(Into::into)
 }
 
-/// Where a store named `name` goes if the user does not choose: `~/Flint/<name>`.
+/// Where a store named `name` goes if the user does not choose.
 #[tauri::command]
-pub fn default_folder(name: String) -> Option<String> {
-    dirs::home_dir().map(|h| h.join("Flint").join(name).display().to_string())
+pub fn default_folder(app: tauri::AppHandle, name: String) -> Option<String> {
+    crate::default_store_folder(&app, &name).map(|p| p.display().to_string())
 }
 
 #[tauri::command]

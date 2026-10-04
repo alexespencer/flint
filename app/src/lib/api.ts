@@ -34,6 +34,13 @@ export interface SyncResult {
   failed: string[];
 }
 
+export interface BiometricState {
+  /** This device can unlock with a fingerprint (hardware present, a finger enrolled). */
+  available: boolean;
+  /** This store has fingerprint unlock set up. */
+  enabled: boolean;
+}
+
 export interface Hit {
   path: string;
   snippet: string;
@@ -55,7 +62,7 @@ export interface NewStore {
 
 /** An error from the Rust side: a stable `kind` to branch on and a message to show. */
 export interface CommandError {
-  kind: "locked" | "wrongPassword" | "storeExists" | "noSuchStore" | "passwordChangedElsewhere" | "other";
+  kind: "locked" | "biometricCancelled" | "keyInvalidated" | "wrongPassword" | "storeExists" | "noSuchStore" | "passwordChangedElsewhere" | "other";
   message: string;
 }
 
@@ -88,7 +95,14 @@ export const api = {
   backlinks: (id: string, path: string) => invoke<{ from: string }[]>("backlinks", { id, path }),
   resolveLink: (id: string, from: string, target: string) =>
     invoke<string | null>("resolve_link", { id, from, target }),
+  biometricState: (id: string) => invoke<BiometricState>("biometric_state", { id }),
+  biometricEnable: (id: string) => invoke<void>("biometric_enable", { id }),
+  biometricUnlock: (id: string) => invoke<void>("biometric_unlock", { id }),
+  biometricDisable: (id: string) => invoke<void>("biometric_disable", { id }),
 };
+
+/** Running in the Android app: no folder picker, and the app locks itself when it goes to the background. */
+export const isAndroid = /Android/i.test(navigator.userAgent);
 
 /** Asks the user for a folder. */
 export async function pickFolder(): Promise<string | null> {

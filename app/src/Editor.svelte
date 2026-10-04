@@ -1,6 +1,6 @@
 <script lang="ts">
   import { onDestroy, onMount } from "svelte";
-  import { EditorState, RangeSetBuilder } from "@codemirror/state";
+  import { Annotation, EditorState, RangeSetBuilder } from "@codemirror/state";
   import {
     Decoration,
     EditorView,
@@ -29,6 +29,21 @@
 
   let host: HTMLDivElement | undefined = $state();
   let view: EditorView | undefined;
+
+  /** Marks a change that came from outside (a sync brought newer text), so it is not reported as an edit. */
+  const external = Annotation.define<boolean>();
+
+  // When the text passed in changes under us (another device's edit arrived), show it, keeping the cursor.
+  $effect(() => {
+    const incoming = text;
+    if (!view || incoming === view.state.doc.toString()) return;
+    const head = Math.min(view.state.selection.main.head, incoming.length);
+    view.dispatch({
+      changes: { from: 0, to: view.state.doc.length, insert: incoming },
+      selection: { anchor: head },
+      annotations: external.of(true),
+    });
+  });
 
   const hidden = Decoration.replace({});
   const editingLink = Decoration.mark({ class: "cm-wikilink" });
@@ -103,7 +118,9 @@
           EditorView.lineWrapping,
           EditorState.readOnly.of(readonly),
           EditorView.updateListener.of((u) => {
-            if (u.docChanged) onchange?.(u.state.doc.toString());
+            if (u.docChanged && !u.transactions.some((t) => t.annotation(external))) {
+              onchange?.(u.state.doc.toString());
+            }
           }),
           EditorView.domEventHandlers({
             // A click on a rendered link follows it; Cmd/Ctrl+click follows one whose source is showing

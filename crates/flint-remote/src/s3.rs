@@ -2,7 +2,7 @@ use std::fmt;
 use std::time::Duration;
 
 use object_store::aws::{AmazonS3, AmazonS3Builder, S3ConditionalPut};
-use object_store::{ClientOptions, RetryConfig};
+use object_store::{Certificate, ClientConfigKey, ClientOptions, RetryConfig};
 use url::{Host, Url};
 
 use crate::{Error, ObjectStoreRemote, Result};
@@ -38,6 +38,12 @@ impl ObjectStoreRemote<AmazonS3> {
     /// (plain `http` is accepted for localhost, where the emulators live). Makes no request; problems
     /// with credentials or the bucket show up on first use.
     pub fn s3(config: &S3Config) -> Result<Self> {
+        // Android has no system verifier we can reach from Rust without a Java-side setup, so there the
+        // connection trusts the bundled Mozilla roots instead.
+        Self::s3_with(config, cfg!(target_os = "android"))
+    }
+
+    fn s3_with(config: &S3Config, bundled_roots: bool) -> Result<Self> {
         let allow_http = match &config.endpoint {
             Some(endpoint) => check_endpoint(endpoint)?,
             None => false,
@@ -53,12 +59,7 @@ impl ObjectStoreRemote<AmazonS3> {
             // `If-Match` / `If-None-Match` on PUT: how a concurrent change is detected
             .with_conditional_put(S3ConditionalPut::ETagMatch)
             // one options value: calling `with_allow_http` separately would be overwritten by it
-            .with_client_options(
-                ClientOptions::new()
-                    .with_allow_http(allow_http)
-                    .with_connect_timeout(Duration::from_secs(10))
-                    .with_timeout(Duration::from_secs(120)),
-            )
+            .with_client_options(client_options(allow_http, bundled_roots)?)
             .with_retry(RetryConfig {
                 max_retries: 3,
                 retry_timeout: Duration::from_secs(60),
@@ -75,6 +76,22 @@ impl ObjectStoreRemote<AmazonS3> {
             .map_err(|e| Error::InvalidConfig(e.to_string()))?;
         Ok(Self::new(store, &config.prefix))
     }
+}
+
+fn client_options(allow_http: bool, bundled_roots: bool) -> Result<ClientOptions> {
+    let mut options = ClientOptions::new()
+        .with_allow_http(allow_http)
+        .with_connect_timeout(Duration::from_secs(10))
+        .with_timeout(Duration::from_secs(120));
+    if bundled_roots {
+        options = options.with_config(ClientConfigKey::NoSystemCertificates, "true");
+        for der in webpki_root_certs::TLS_SERVER_ROOT_CERTS {
+            let certificate = Certificate::from_der(der)
+                .map_err(|e| Error::InvalidConfig(format!("a bundled root certificate: {e}")))?;
+            options = options.with_root_certificate(certificate);
+        }
+    }
+    Ok(options)
 }
 
 /// Accepts `https` anywhere and `http` only for localhost. Returns whether plain http is in use.
@@ -108,6 +125,28 @@ pub(crate) fn check_endpoint(endpoint: &str) -> Result<bool> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_client_trusting_only_the_bundled_roots_can_be_built() {
+        ObjectStoreRemote::s3_with(&config(Some("https://example.com")), true).unwrap();
+    }
+
+    /// The Android path, tried from the desktop: trust only the bundled roots, and make a real TLS
+    /// connection. AWS answers an unsigned-in request with an access error, which proves the handshake
+    /// passed; a certificate problem would come back as a connection error instead.
+    #[tokio::test]
+    #[ignore = "needs the internet"]
+    async fn bundled_roots_are_enough_to_reach_a_real_https_server() {
+        use crate::RemoteStore;
+        let mut config = config(None);
+        config.bucket = "flint-bundled-roots-check-does-not-exist".into();
+        let remote = ObjectStoreRemote::s3_with(&config, true).unwrap();
+        let error = remote.list().await.unwrap_err();
+        assert!(
+            matches!(error, Error::AccessDenied(_) | Error::NoSuchBucket(_)),
+            "{error:?}"
+        );
+    }
 
     fn config(endpoint: Option<&str>) -> S3Config {
         S3Config {

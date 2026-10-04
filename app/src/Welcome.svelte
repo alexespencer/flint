@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { api, errorKind, errorMessage, pickFolder } from "./lib/api";
+  import { api, errorKind, errorMessage, isAndroid, pickFolder } from "./lib/api";
 
   import type { StoreInfo } from "./lib/api";
 
@@ -114,20 +114,22 @@
     </div>
     <p class="dim">
       {#if mode === "create"}
-        A store is a folder of notes, encrypted with its own password and synced to a bucket you own. Notes you drop into the folder are encrypted in place.
+        A store is a folder of notes, encrypted with its own password and synced to a bucket you own.{#if !isAndroid} Notes you drop into the folder are encrypted in place.{/if}
       {:else}
         Add a store you made on another device. You need its bucket details and its password.
       {/if}
     </p>
 
     <label>Name <input bind:value={name} required /></label>
-    <label>
-      Folder on this Mac
-      <span class="pick">
-        <input bind:value={folder} oninput={() => (folderEdited = true)} required />
-        <button type="button" onclick={choose}>Choose…</button>
-      </span>
-    </label>
+    {#if !isAndroid}
+      <label>
+        Folder on this Mac
+        <span class="pick">
+          <input bind:value={folder} oninput={() => (folderEdited = true)} required />
+          <button type="button" onclick={choose}>Choose…</button>
+        </span>
+      </label>
+    {/if}
     <fieldset>
       <legend>S3</legend>
       {#if accounts.length > 0}

@@ -1,0 +1,20 @@
+[package]
+name = "tauri-plugin-keystore"
+description = "Android Keystore for Flint: a hardware-backed key for saved secrets, and a fingerprint-gated one for a store's data key. A Tauri plugin, so it is named as Tauri requires."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+links = "tauri-plugin-keystore"
+
+[lints]
+workspace = true
+
+[dependencies]
+serde = { version = "1.0.229", features = ["derive"] }
+tauri = "2"
+thiserror = "2.0.21"
+
+[build-dependencies]
+tauri-plugin = { version = "2", features = ["build"] }

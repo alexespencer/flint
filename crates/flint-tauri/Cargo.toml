@@ -15,6 +15,7 @@ unsafe_code = "deny"
 
 [lib]
 name = "flint_tauri"
+crate-type = ["staticlib", "cdylib", "rlib"]
 
 [[bin]]
 name = "flint-app"
@@ -25,6 +26,7 @@ tauri-build = { version = "2", features = [] }
 
 [dependencies]
 dirs = "7.0.0"
+flint-crypto = { version = "0.0.0", path = "../flint-crypto" }
 flint-app-service = { version = "0.0.0", path = "../flint-app-service" }
 flint-core = { version = "0.0.0", path = "../flint-core" }
 flint-index = { version = "0.0.0", path = "../flint-index" }
@@ -36,3 +38,9 @@ serde = { version = "1.0.229", features = ["derive"] }
 tauri = { version = "2", features = [] }
 tauri-plugin-dialog = "2"
 tokio = { version = "1.53.2", features = ["rt", "sync"] }
+
+[target.'cfg(target_os = "android")'.dependencies]
+base64 = "0.23.1"
+serde_json = "1.0.151"
+tauri-plugin-keystore = { version = "0.0.0", path = "../tauri-plugin-keystore" }
+tempfile = "3.27.0"

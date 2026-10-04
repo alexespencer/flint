@@ -1,6 +1,6 @@
 <script lang="ts">
   import { onDestroy, onMount } from "svelte";
-  import { api, errorKind, errorMessage, summarise, type Hit, type StoreInfo } from "./lib/api";
+  import { api, errorKind, errorMessage, isAndroid, summarise, type Hit, type StoreInfo } from "./lib/api";
   import { pieces } from "./lib/snippet";
   import { buildTree, isNote, title } from "./lib/tree";
   import ConflictView from "./ConflictView.svelte";
@@ -54,6 +54,10 @@
   let unsynced = false;
   let searchTimer: ReturnType<typeof setTimeout> | undefined;
   let lastActivity = Date.now();
+  /** A narrow screen shows one pane at a time: the file list, or the open note. */
+  let narrow = $state(false);
+  let pane = $state<"list" | "note">("list");
+  let showInfo = $state(false);
 
   const tree = $derived(buildTree(files));
   const conflicted = $derived(new Set(store.conflicts.map((c) => c.path)));
@@ -121,6 +125,8 @@
     try {
       const text = await api.readNote(store.id, path);
       current = { path, text };
+      pane = "note";
+      showInfo = false;
       dirty = false;
       saveState = "saved";
       hits = null;
@@ -213,6 +219,7 @@
         if (fresh !== null && fresh !== current.text && !dirty) current = { path: current.path, text: fresh };
       } else if (current && !files.includes(current.path)) {
         current = null;
+        pane = "list";
       }
       if (current) loadBacklinks(current.path);
       const problems = [...result.failed, ...result.refused];
@@ -250,8 +257,14 @@
       await api.lock(store.id);
     } finally {
       current = null;
+      pane = "list";
       onchange();
     }
+  }
+
+  /** On a phone, leaving the app locks the store, so nothing stays unlocked in the background. */
+  function visibilityChanged() {
+    if (isAndroid && document.visibilityState === "hidden") lock();
   }
 
   async function conflictsChanged() {
@@ -271,6 +284,9 @@
 
   let timers: ReturnType<typeof setInterval>[] = [];
   onMount(async () => {
+    const narrowScreen = window.matchMedia("(max-width: 720px)");
+    narrow = narrowScreen.matches;
+    narrowScreen.addEventListener("change", (e) => (narrow = e.matches));
     try {
       await loadFiles();
     } catch (e) {
@@ -294,9 +310,10 @@
 </script>
 
 <svelte:window onkeydown={noteActivity} onmousedown={noteActivity} onmousemove={noteActivity} />
+<svelte:document onvisibilitychange={visibilityChanged} />
 
-<div class="app">
-  <aside>
+<div class="app" class:narrow>
+  <aside class:away={narrow && pane !== "list"}>
     <header>
       {#if stores.length > 1}
         <select value={store.id} onchange={(e) => {
@@ -353,14 +370,22 @@
     </footer>
   </aside>
 
-  <main>
+  <main class:away={narrow && pane !== "note"}>
     {#if current}
       <div class="titlebar">
+        {#if narrow}
+          <button class="back" aria-label="Back to notes" onclick={() => flush().then(() => (pane = "list"))}>‹</button>
+        {/if}
         <span class="title">{title(current.path)}</span>
         <span class="dim path">{current.path}</span>
         <span class="save dim" class:error={saveState === "failed"}>
           {saveState === "saved" ? "" : saveState === "saving" ? "Saving…" : saveState === "unsaved" ? "Editing…" : "Not saved"}
         </span>
+        {#if narrow}
+          <button class="info" onclick={() => (showInfo = !showInfo)} aria-expanded={showInfo}>
+            Links{backlinks.length ? ` (${backlinks.length})` : ""}
+          </button>
+        {/if}
       </div>
       {#key current.path}
         <div class="editor-host">
@@ -378,7 +403,8 @@
     </div>
   </main>
 
-  <section class="right">
+  <section class="right" class:sheet={narrow} class:open={showInfo}>
+    {#if narrow}<button class="close" onclick={() => (showInfo = false)}>Close</button>{/if}
     <h4>Backlinks</h4>
     {#if !current}
       <p class="dim pad">—</p>
@@ -412,6 +438,40 @@
     display: grid;
     grid-template-columns: 260px 1fr 220px;
     height: 100%;
+  }
+  .app.narrow {
+    grid-template-columns: 1fr;
+  }
+  .away {
+    display: none !important;
+  }
+  .back,
+  .info,
+  .close {
+    padding: 4px 10px;
+  }
+  .back {
+    font-size: 20px;
+    line-height: 1;
+    align-self: center;
+  }
+  .right.sheet {
+    display: none;
+    position: fixed;
+    inset: auto 0 0 0;
+    max-height: 60%;
+    border: 1px solid var(--border);
+    border-radius: 14px 14px 0 0;
+    box-shadow: 0 -6px 24px rgb(0 0 0 / 0.25);
+    z-index: 5;
+    padding-bottom: env(safe-area-inset-bottom);
+  }
+  .right.sheet.open {
+    display: flex;
+  }
+  .close {
+    align-self: flex-end;
+    margin: 8px 10px 0;
   }
   aside,
   .right {
