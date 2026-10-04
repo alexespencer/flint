@@ -15,15 +15,19 @@ bucket is the authoritative check of how S3 itself behaves (error codes, ETags, 
 ## Running it
 
 Use a **scratch prefix** you do not mind filling. The tests write under `flint-contract/<run>/` and the run makes a few
-thousand tiny requests (the paging test alone creates 1,250 objects), which costs well under a cent. Keep the
-credentials in your own shell (in Claude Code, type `! cargo test ...` so they never enter the conversation):
+thousand tiny requests (the paging test alone creates 1,250 objects), which costs well under a cent.
+
+Copy `.env.example` to `.env` (git-ignored; keep it private), fill in the five values, and run:
 
 ```sh
-export FLINT_S3_BUCKET=your-bucket FLINT_S3_REGION=eu-west-2
-export FLINT_S3_ACCESS_KEY=... FLINT_S3_SECRET_KEY=...
-# FLINT_S3_ENDPOINT=https://...   only for a non-AWS server (must be https)
-cargo test -p flint-remote backends::external -- --ignored
+scripts/s3-tests.sh              # diagnose, then the contract suite, then clean up
+scripts/s3-tests.sh diagnose     # one line per operation showing what the server does
+scripts/s3-tests.sh paging       # just the 1,250-object listing test
+scripts/s3-tests.sh cleanup      # delete everything under flint-contract/
 ```
+
+The script loads `.env` without printing it. Or set the variables yourself and run the cargo commands the script wraps
+(`cargo test -p flint-remote backends::external -- --ignored`, and so on).
 
 For Cloudflare R2 (the endpoint is the account host, **without** the bucket name; the region is literally `auto`):
 

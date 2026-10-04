@@ -14,7 +14,7 @@ macro_rules! remote_contract {
 
             use bytes::Bytes;
             use flint_core::{ContentHash, StorePath};
-            use futures::{StreamExt, TryStreamExt};
+            use futures::StreamExt;
 
             use super::*;
             use crate::testing::Backend;
@@ -206,7 +206,7 @@ macro_rules! remote_contract {
                 let (backend, _guard) = $make.await;
                 let remote = backend.remote("store");
                 let n = 1_250; // S3 lists 1,000 keys per page
-                futures::stream::iter(0..n)
+                let uploads: Vec<_> = futures::stream::iter(0..n)
                     .map(|i| {
                         let remote = &remote;
                         async move {
@@ -215,15 +215,22 @@ macro_rules! remote_contract {
                         }
                     })
                     .buffer_unordered(16)
-                    .try_collect::<Vec<_>>()
-                    .await
-                    .unwrap();
+                    .collect()
+                    .await;
+                let failed: Vec<_> = uploads.iter().filter_map(|r| r.as_ref().err()).collect();
+                assert!(failed.is_empty(), "{} of {n} uploads failed; the first: {:?}", failed.len(), failed[0]);
+
                 let paths = sorted_paths(&remote).await;
-                assert_eq!(paths.len(), n);
-                assert_eq!(paths.first().unwrap(), "many/0000.md");
-                assert_eq!(paths.last().unwrap(), "many/1249.md");
-                let distinct: std::collections::BTreeSet<_> = paths.iter().collect();
-                assert_eq!(distinct.len(), n, "no object listed twice or skipped at a page boundary");
+                let expected: std::collections::BTreeSet<String> = (0..n).map(|i| format!("many/{i:04}.md")).collect();
+                let listed: std::collections::BTreeSet<String> = paths.iter().cloned().collect();
+                let missing: Vec<_> = expected.difference(&listed).take(8).collect();
+                let unexpected: Vec<_> = listed.difference(&expected).take(8).collect();
+                assert!(
+                    paths.len() == n && missing.is_empty() && unexpected.is_empty(),
+                    "listed {} objects (and {} distinct) of {n}; first missing: {missing:?}; unexpected: {unexpected:?}",
+                    paths.len(),
+                    listed.len()
+                );
             }
 
             $(#[$attr])*
