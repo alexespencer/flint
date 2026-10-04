@@ -224,3 +224,36 @@ fn store_ids_are_random_and_only_valid_ones_parse() {
         assert!(StoreId::parse(bad).is_none(), "{bad}");
     }
 }
+
+#[test]
+fn saved_keys_survive_a_lock_and_go_when_the_store_is_removed() {
+    let dir = TempDir::new().unwrap();
+    let secrets = Arc::new(MemorySecrets::new());
+    let mut registry = open(&dir, &secrets);
+    let work = record("Work", "/f/work");
+    registry.add(work.clone()).unwrap();
+    let keys = StoreKeys::new(3, Dek::from_bytes([5; 32]));
+
+    assert!(registry.saved_keys(&work.id).unwrap().is_none());
+    registry.unlock(&work.id, &keys).unwrap();
+    registry.save_keys(&work.id, &keys).unwrap();
+    registry.lock_all().unwrap();
+    assert!(!registry.is_unlocked(&work.id).unwrap());
+    let back = registry.saved_keys(&work.id).unwrap().unwrap();
+    assert_eq!(
+        (back.key_id(), back.dek().as_bytes()),
+        (3, keys.dek().as_bytes())
+    );
+
+    registry.forget_saved_keys(&work.id).unwrap();
+    assert!(registry.saved_keys(&work.id).unwrap().is_none());
+
+    registry.save_keys(&work.id, &keys).unwrap();
+    registry.remove(&work.id).unwrap();
+    assert!(
+        secrets
+            .get(&format!("{}/saved-keys", work.id))
+            .unwrap()
+            .is_none()
+    );
+}

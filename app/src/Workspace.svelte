@@ -13,12 +13,15 @@
     onchange,
     onswitch,
     onadd,
+    onlocked,
   }: {
     store: StoreInfo;
     stores: StoreInfo[];
     onchange: () => void;
     onswitch: (id: string) => void;
     onadd: () => void;
+    /** The app was locked. `askNext`: the unlock screen should ask for the fingerprint by itself. */
+    onlocked: (askNext: boolean) => void;
   } = $props();
 
   const SYNC_EVERY_MS = 60_000;
@@ -250,7 +253,9 @@
     next();
   }
 
-  async function lock() {
+  /** Locks every store. `askNext`: the person is coming back to the app (Android: from the background), so the
+   *  unlock screen may ask for the fingerprint by itself; after the Lock button or an idle lock it does not. */
+  async function lock(askNext = false) {
     await flush();
     if (unsynced) await sync(); // locking stops syncing, so send what is waiting first
     try {
@@ -258,13 +263,14 @@
     } finally {
       current = null;
       pane = "list";
+      onlocked(askNext);
       onchange();
     }
   }
 
   /** On a phone, leaving the app locks the store, so nothing stays unlocked in the background. */
   function visibilityChanged() {
-    if (isAndroid && document.visibilityState === "hidden") lock();
+    if (isAndroid && document.visibilityState === "hidden") lock(true);
   }
 
   async function conflictsChanged() {
@@ -366,7 +372,7 @@
     <footer>
       <button onclick={() => sync(true)} disabled={syncing}>{syncing ? "Syncing…" : "Sync now"}</button>
       <button onclick={() => leaveThen(onadd)}>Add store</button>
-      <button onclick={lock} title="Lock every store; each needs its password{isAndroid ? " or fingerprint" : ""} to open again">
+      <button onclick={() => lock()} title="Lock every store; each needs its password{isAndroid ? " or fingerprint" : ""} to open again">
         {stores.length > 1 ? "Lock all" : "Lock"}
       </button>
     </footer>

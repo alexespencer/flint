@@ -6,6 +6,8 @@ mod android_secrets;
 mod biometric;
 mod commands;
 mod dto;
+#[cfg(target_os = "macos")]
+mod touchid;
 mod worker;
 
 use flint_app_service::{AppService, S3Connect};

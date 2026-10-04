@@ -9,6 +9,8 @@
   let loaded = $state(false);
   let adding = $state(false);
   let fatal = $state("");
+  /** Whether the unlock screen asks for Touch ID by itself: when the app starts, but not just after a lock. */
+  let askAtOnce = $state(true);
 
   const active = $derived(stores.find((s) => s.active) ?? stores[0]);
 
@@ -42,7 +44,7 @@
 {:else if adding || !active}
   <Welcome {stores} ondone={added} oncancel={() => (adding = false)} />
 {:else if !active.unlocked}
-  <Unlock {stores} store={active} onunlocked={refresh} onswitch={switchTo} onadd={() => (adding = true)} onchange={refresh} />
+  <Unlock {stores} store={active} {askAtOnce} onunlocked={refresh} onswitch={switchTo} onadd={() => (adding = true)} onchange={refresh} />
 {:else}
   <!-- keyed by store: switching starts a fresh workspace, so nothing of the other store's notes lingers -->
   {#key active.id}
@@ -52,6 +54,7 @@
       onchange={refresh}
       onswitch={switchTo}
       onadd={() => (adding = true)}
+      onlocked={(askNext) => (askAtOnce = askNext)}
     />
   {/key}
 {/if}

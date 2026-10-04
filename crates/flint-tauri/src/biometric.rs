@@ -1,6 +1,10 @@
-//! Fingerprint unlock. On Android the store's data key is wrapped by a Keystore key that needs a
-//! fingerprint for every use; this device then keeps only the wrapped copy. Elsewhere it is not available
-//! yet (macOS Touch ID is still to do).
+//! Fingerprint unlock.
+//!
+//! - **Android:** the store's data key is wrapped by a Keystore key that needs a fingerprint for every
+//!   use; the device keeps only the wrapped copy. Each store asks separately.
+//! - **macOS:** the keys are kept in the keychain vault, and Touch ID is checked by the app before they are
+//!   handed back. One Touch ID unlocks **every** store that has it turned on, so switching between stores
+//!   never asks again.
 
 use flint_registry::StoreId;
 use serde::Serialize;
@@ -30,7 +34,7 @@ pub async fn biometric_state(
 ) -> Result<BiometricState, CmdError> {
     let id = store_id(&id)?;
     Ok(worker
-        .call(move |_| Box::pin(async move { platform::state(&app, &id) }))
+        .call(move |svc| Box::pin(async move { platform::state(&app, svc, &id) }))
         .await)
 }
 
@@ -68,7 +72,7 @@ pub async fn biometric_disable(
 ) -> Result<(), CmdError> {
     let id = store_id(&id)?;
     worker
-        .call(move |_| Box::pin(async move { platform::disable(&app, &id) }))
+        .call(move |svc| Box::pin(async move { platform::disable(&app, svc, &id) }))
         .await
 }
 
@@ -123,7 +127,7 @@ mod platform {
         }
     }
 
-    pub fn state(app: &AppHandle, id: &StoreId) -> BiometricState {
+    pub fn state(app: &AppHandle, _: &Service, id: &StoreId) -> BiometricState {
         let available = app
             .keystore()
             .status()
@@ -184,7 +188,7 @@ mod platform {
         Ok(())
     }
 
-    pub fn disable(app: &AppHandle, id: &StoreId) -> Result<(), CmdError> {
+    pub fn disable(app: &AppHandle, _: &Service, id: &StoreId) -> Result<(), CmdError> {
         let mut map = read(app);
         if map.remove(id.as_str()).is_some() {
             write(app, &map)?;
@@ -193,7 +197,69 @@ mod platform {
     }
 }
 
-#[cfg(not(target_os = "android"))]
+#[cfg(target_os = "macos")]
+mod platform {
+    use flint_registry::StoreId;
+    use tauri::AppHandle;
+
+    use super::BiometricState;
+    use crate::Service;
+    use crate::dto::CmdError;
+    use crate::touchid::{self, Refusal};
+
+    fn refused(refusal: Refusal) -> CmdError {
+        match refusal {
+            Refusal::Cancelled => CmdError {
+                kind: "biometricCancelled",
+                message: "Touch ID was cancelled".into(),
+            },
+            Refusal::Failed(why) => CmdError::other(why),
+        }
+    }
+
+    pub fn state(_: &AppHandle, svc: &Service, id: &StoreId) -> BiometricState {
+        let available = touchid::available();
+        BiometricState {
+            available,
+            enabled: available && svc.registry().saved_keys(id).is_ok_and(|k| k.is_some()),
+        }
+    }
+
+    /// Keeps the unlocked store's keys through a lock, to be handed back after Touch ID.
+    pub fn enable(_: &AppHandle, svc: &Service, id: &StoreId) -> Result<(), CmdError> {
+        let keys = svc
+            .registry()
+            .unlocked_keys(id)?
+            .ok_or_else(|| flint_app_service::Error::Locked(id.clone()))?;
+        touchid::confirm("turn on Touch ID unlock for this store").map_err(refused)?;
+        svc.registry().save_keys(id, &keys)?;
+        Ok(())
+    }
+
+    /// One Touch ID, then every store that has it turned on is unlocked.
+    pub fn unlock(_: &AppHandle, svc: &Service, id: &StoreId) -> Result<(), CmdError> {
+        if svc.registry().saved_keys(id)?.is_none() {
+            return Err(CmdError::other(
+                "Touch ID unlock is not set up for this store",
+            ));
+        }
+        touchid::confirm("unlock your Flint stores").map_err(refused)?;
+        let ids: Vec<_> = svc.registry().list().iter().map(|s| s.id.clone()).collect();
+        for store in ids {
+            if let Some(keys) = svc.registry().saved_keys(&store)? {
+                svc.registry().unlock(&store, &keys)?;
+            }
+        }
+        Ok(())
+    }
+
+    pub fn disable(_: &AppHandle, svc: &Service, id: &StoreId) -> Result<(), CmdError> {
+        svc.registry().forget_saved_keys(id)?;
+        Ok(())
+    }
+}
+
+#[cfg(not(any(target_os = "android", target_os = "macos")))]
 mod platform {
     use flint_registry::StoreId;
     use tauri::AppHandle;
@@ -202,7 +268,7 @@ mod platform {
     use crate::Service;
     use crate::dto::CmdError;
 
-    pub fn state(_: &AppHandle, _: &StoreId) -> BiometricState {
+    pub fn state(_: &AppHandle, _: &Service, _: &StoreId) -> BiometricState {
         BiometricState {
             available: false,
             enabled: false,
@@ -221,7 +287,7 @@ mod platform {
         ))
     }
 
-    pub fn disable(_: &AppHandle, _: &StoreId) -> Result<(), CmdError> {
+    pub fn disable(_: &AppHandle, _: &Service, _: &StoreId) -> Result<(), CmdError> {
         Ok(())
     }
 }

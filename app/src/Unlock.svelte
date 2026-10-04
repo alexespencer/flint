@@ -1,9 +1,10 @@
 <script lang="ts">
-  import { api, errorKind, errorMessage, type BiometricState, type StoreInfo } from "./lib/api";
+  import { api, errorKind, errorMessage, isAndroid, type BiometricState, type StoreInfo } from "./lib/api";
 
   let {
     stores,
     store,
+    askAtOnce,
     onunlocked,
     onswitch,
     onadd,
@@ -11,6 +12,8 @@
   }: {
     stores: StoreInfo[];
     store: StoreInfo;
+    /** Ask for the fingerprint without being asked to (true at start-up, false right after a lock). */
+    askAtOnce: boolean;
     onunlocked: () => void;
     onswitch: (id: string) => void;
     onadd: () => void;
@@ -23,6 +26,7 @@
   let input: HTMLInputElement | undefined = $state();
   let biometric = $state<BiometricState>({ available: false, enabled: false });
   let rememberFingerprint = $state(true);
+  const method = isAndroid ? "fingerprint" : "Touch ID";
 
   $effect(() => {
     const id = store.id;
@@ -32,7 +36,7 @@
     api.biometricState(id).then((state) => {
       if (store.id !== id) return;
       biometric = state;
-      if (state.enabled) fingerprint(); // ask straight away; the password is still there as a fallback
+      if (state.enabled && askAtOnce) fingerprint(); // the password is still there as a fallback
       else input?.focus();
     }, () => input?.focus());
   });
@@ -47,7 +51,7 @@
       const kind = errorKind(e);
       if (kind === "keyInvalidated") {
         biometric = { ...biometric, enabled: false };
-        error = "Your fingerprints have changed, so enter your password. You can turn fingerprint unlock on again afterwards.";
+        error = `Your fingerprints have changed, so enter your password. You can turn ${method} unlock on again afterwards.`;
       } else if (kind !== "biometricCancelled") {
         error = errorMessage(e);
       }
@@ -108,10 +112,10 @@
     {#if error}<p class="error">{error}</p>{/if}
     <button class="primary" disabled={busy || !password}>{busy ? "Unlocking…" : "Unlock"}</button>
     {#if biometric.enabled}
-      <button type="button" onclick={fingerprint} disabled={busy}>Use fingerprint</button>
+      <button type="button" onclick={fingerprint} disabled={busy}>Use {method}</button>
     {:else if biometric.available}
       <label class="check">
-        <input type="checkbox" bind:checked={rememberFingerprint} /> Unlock with my fingerprint next time
+        <input type="checkbox" bind:checked={rememberFingerprint} /> Unlock with {isAndroid ? "my fingerprint" : "Touch ID"} next time
       </label>
     {/if}
     <div class="row">

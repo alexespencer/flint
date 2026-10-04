@@ -98,7 +98,7 @@ impl<S: SecretStore> Registry<S> {
             self.data.active = self.data.stores.first().map(|s| s.id.clone());
         }
         self.save()?;
-        for key in [s3_secret_key(id), keys_key(id)] {
+        for key in [s3_secret_key(id), keys_key(id), saved_keys_key(id)] {
             self.secrets.delete(&key)?;
         }
         match std::fs::remove_dir_all(self.state_path(id)) {
@@ -155,14 +155,16 @@ impl<S: SecretStore> Registry<S> {
     /// Remembers the store's keys, so it can be opened without the password until it is
     /// [`lock`](Self::lock)ed.
     pub fn unlock(&self, id: &StoreId, keys: &StoreKeys) -> Result<()> {
-        let mut bytes = keys.key_id().to_be_bytes().to_vec();
-        bytes.extend_from_slice(keys.dek().as_bytes());
-        self.secrets.set(&keys_key(id), &bytes)
+        self.secrets.set(&keys_key(id), &encode_keys(keys))
     }
 
     /// The store's keys, if it was unlocked on this device and not locked since.
     pub fn unlocked_keys(&self, id: &StoreId) -> Result<Option<StoreKeys>> {
-        let Some(bytes) = self.secrets.get(&keys_key(id))? else {
+        self.read_keys(&keys_key(id))
+    }
+
+    fn read_keys(&self, secret: &str) -> Result<Option<StoreKeys>> {
+        let Some(bytes) = self.secrets.get(secret)? else {
             return Ok(None);
         };
         let parsed = bytes.split_at_checked(4).and_then(|(key_id, dek)| {
@@ -173,13 +175,29 @@ impl<S: SecretStore> Registry<S> {
         });
         let Some((key_id, dek)) = parsed else {
             // not what we wrote: forget it, so the store is locked everywhere, including `is_unlocked`
-            self.secrets.delete(&keys_key(id))?;
+            self.secrets.delete(secret)?;
             return Ok(None);
         };
         Ok(Some(StoreKeys::new(
             u32::from_be_bytes(key_id),
             Dek::from_bytes(dek),
         )))
+    }
+
+    /// Keeps the store's keys so that they survive [`lock`](Self::lock), for a shell to hand back after a
+    /// biometric check (Touch ID). Whoever can read the secret store can read them, so the shell must
+    /// ask for the biometric check before it calls [`saved_keys`](Self::saved_keys).
+    pub fn save_keys(&self, id: &StoreId, keys: &StoreKeys) -> Result<()> {
+        self.secrets.set(&saved_keys_key(id), &encode_keys(keys))
+    }
+
+    /// The keys kept with [`save_keys`](Self::save_keys), if any.
+    pub fn saved_keys(&self, id: &StoreId) -> Result<Option<StoreKeys>> {
+        self.read_keys(&saved_keys_key(id))
+    }
+
+    pub fn forget_saved_keys(&self, id: &StoreId) -> Result<()> {
+        self.secrets.delete(&saved_keys_key(id))
     }
 
     pub fn is_unlocked(&self, id: &StoreId) -> Result<bool> {
@@ -261,6 +279,16 @@ fn s3_secret_key(id: &StoreId) -> String {
 
 fn keys_key(id: &StoreId) -> String {
     format!("{id}/keys")
+}
+
+fn saved_keys_key(id: &StoreId) -> String {
+    format!("{id}/saved-keys")
+}
+
+fn encode_keys(keys: &StoreKeys) -> Vec<u8> {
+    let mut bytes = keys.key_id().to_be_bytes().to_vec();
+    bytes.extend_from_slice(keys.dek().as_bytes());
+    bytes
 }
 
 #[cfg(test)]
