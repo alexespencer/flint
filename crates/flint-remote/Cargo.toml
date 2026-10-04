@@ -1,0 +1,30 @@
+[package]
+name = "flint-remote"
+description = "All S3 access for one store: the RemoteStore trait, an object_store adapter, HTTPS enforced."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+bytes = "1.12.1"
+flint-core = { version = "0.0.0", path = "../flint-core" }
+futures = "0.3.34"
+object_store = { version = "0.14.2", default-features = false, features = ["aws"] }
+percent-encoding = "2.3.2"
+thiserror = "2.0.21"
+tokio = { version = "1.53.2", features = ["rt", "macros", "time"] }
+url = "2.5.8"
+zeroize = "1.9.0"
+
+[dev-dependencies]
+hyper = { version = "1.11.1", features = ["http1", "server"] }
+hyper-util = { version = "0.1.21", features = ["tokio", "server-auto", "http1"] }
+s3s = "0.17.0"
+s3s-fs = "0.17.0"
+tempfile = "3.27.0"
+tokio = { version = "1.53.2", features = ["full"] }
