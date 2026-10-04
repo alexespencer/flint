@@ -1,0 +1,38 @@
+[package]
+name = "flint-tauri"
+description = "The Flint desktop app: Tauri commands and events over flint-app-service. No logic of its own."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+default-run = "flint-app"
+
+# Not `workspace = true`: this is a platform crate. Tauri's macros (and, later, the biometric and
+# Android bridges) need `unsafe`, so the workspace-wide `forbid(unsafe_code)` is left to the other crates.
+[lints.rust]
+unsafe_code = "deny"
+
+[lib]
+name = "flint_tauri"
+
+[[bin]]
+name = "flint-app"
+path = "src/main.rs"
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+dirs = "7.0.0"
+flint-app-service = { version = "0.0.0", path = "../flint-app-service" }
+flint-core = { version = "0.0.0", path = "../flint-core" }
+flint-index = { version = "0.0.0", path = "../flint-index" }
+flint-registry = { version = "0.0.0", path = "../flint-registry" }
+flint-sync = { version = "0.0.0", path = "../flint-sync" }
+futures = "0.3.34"
+gethostname = "1.1.0"
+serde = { version = "1.0.229", features = ["derive"] }
+tauri = { version = "2", features = [] }
+tauri-plugin-dialog = "2"
+tokio = { version = "1.53.2", features = ["rt", "sync"] }

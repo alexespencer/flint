@@ -1,0 +1,7 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "default",
+  "description": "What the main window may do: call Flint's own commands, and pick a folder.",
+  "windows": ["main"],
+  "permissions": ["core:default", "dialog:allow-open"]
+}

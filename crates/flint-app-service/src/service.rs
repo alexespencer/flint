@@ -97,6 +97,16 @@ impl<S: SecretStore, C: Connect> AppService<S, C> {
 
     // ---- stores ---------------------------------------------------------------------------------
 
+    /// The S3 secret key saved for another store, so a new store on the same account does not need it
+    /// typed again. The key goes straight from the secret store into the new store's [`NewStore`]; it
+    /// is never shown to a user interface.
+    pub fn reuse_s3_secret(&self, from: &StoreId) -> Result<String> {
+        self.registry.get(from)?;
+        self.registry
+            .s3_secret(from)?
+            .ok_or_else(|| Error::MissingS3Secret(from.clone()))
+    }
+
     /// Creates a brand-new store: a fresh key file, written to the folder and uploaded as the store's
     /// first object. Refuses if the bucket and prefix already hold a store, so one can never be
     /// overwritten. The store is left unlocked. Does not sync; files already in the folder are
@@ -353,6 +363,17 @@ impl<S: SecretStore, C: Connect> AppService<S, C> {
     pub fn search(&self, id: &StoreId, query: &str, limit: usize) -> Result<Vec<SearchHit>> {
         let (record, keys) = self.unlocked(id)?;
         Ok(self.index(&record, &keys)?.search(query, limit)?)
+    }
+
+    /// Where a `[[link]]` written in `from` points, or `None` if no file matches it.
+    pub fn resolve_link(
+        &self,
+        id: &StoreId,
+        from: &StorePath,
+        target: &str,
+    ) -> Result<Option<StorePath>> {
+        let (record, keys) = self.unlocked(id)?;
+        Ok(self.index(&record, &keys)?.resolve(from, target)?)
     }
 
     pub fn backlinks(&self, id: &StoreId, path: &StorePath) -> Result<Vec<Backlink>> {

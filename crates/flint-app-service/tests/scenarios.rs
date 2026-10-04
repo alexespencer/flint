@@ -561,6 +561,28 @@ async fn status_lists_files_still_waiting_to_be_encrypted() {
 }
 
 #[tokio::test]
+async fn a_second_store_can_reuse_the_first_ones_s3_secret() {
+    let (mut mac, _, _) = two_devices().await;
+    let first = mac.id();
+    let secret = mac.service.reuse_s3_secret(&first).unwrap();
+    assert_eq!(secret, "secret");
+
+    let mut second = mac.new_store("other password");
+    second.name = "Second".into();
+    second.folder = mac.folder.path().join("Second");
+    second.remote.prefix = "second".into();
+    second.s3_secret = secret;
+    let id = mac.service.create_store(second).await.unwrap();
+    assert_eq!(mac.service.reuse_s3_secret(&id).unwrap(), "secret");
+
+    let nobody = StoreId::generate();
+    assert!(matches!(
+        mac.service.reuse_s3_secret(&nobody),
+        Err(Error::Registry(flint_registry::Error::UnknownStore(_)))
+    ));
+}
+
+#[tokio::test]
 async fn stores_cannot_be_nested_and_names_are_unique() {
     let (mut mac, _, _) = two_devices().await;
     let mut inner = mac.new_store("pw");
