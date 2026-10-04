@@ -33,6 +33,7 @@ impl Baseline {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Conflict {
     pub path: StorePath,
-    /// Where the other side's version was written, next to the original.
-    pub copy: StorePath,
+    /// Where the other side's version was written, next to the original. `None` when there is no other
+    /// version to keep (edited here, deleted there).
+    pub copy: Option<StorePath>,
 }

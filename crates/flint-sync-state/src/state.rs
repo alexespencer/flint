@@ -17,7 +17,7 @@ CREATE TABLE baselines (
 );
 CREATE TABLE conflicts (
     path      TEXT PRIMARY KEY,    -- a conflict can exist with no baseline (same new name on both devices)
-    copy_path TEXT NOT NULL
+    copy_path TEXT            -- NULL when there is no other version to keep
 );
 ";
 
@@ -137,10 +137,10 @@ impl SyncState {
 
     /// Holds `path` back from sync until [`resolve`](Self::resolve) or [`clear_conflict`](Self::clear_conflict).
     /// `copy` is where the other side's version was written. Marking an already-flagged path updates the copy.
-    pub fn mark_conflict(&mut self, path: &StorePath, copy: &StorePath) -> Result<()> {
+    pub fn mark_conflict(&mut self, path: &StorePath, copy: Option<&StorePath>) -> Result<()> {
         self.conn.execute(
             "INSERT INTO conflicts (path, copy_path) VALUES (?1, ?2) ON CONFLICT(path) DO UPDATE SET copy_path = ?2",
-            params![path.as_str(), copy.as_str()],
+            params![path.as_str(), copy.map(|c| c.as_str())],
         )?;
         Ok(())
     }
@@ -174,6 +174,16 @@ impl SyncState {
             "DELETE FROM conflicts WHERE path = ?1",
             [baseline.path.as_str()],
         )?;
+        tx.commit()?;
+        Ok(())
+    }
+
+    /// Settles a conflict by dropping the baseline too, so the file is treated as new on whichever side still
+    /// has it. One transaction.
+    pub fn release(&mut self, path: &StorePath) -> Result<()> {
+        let tx = self.conn.transaction()?;
+        tx.execute("DELETE FROM baselines WHERE path = ?1", [path.as_str()])?;
+        tx.execute("DELETE FROM conflicts WHERE path = ?1", [path.as_str()])?;
         tx.commit()?;
         Ok(())
     }
@@ -236,12 +246,14 @@ fn baseline_from_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<Result<Baselin
 }
 
 fn conflict_from_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<Result<Conflict>> {
-    let (path, copy): (String, String) = (row.get(0)?, row.get(1)?);
+    let (path, copy): (String, Option<String>) = (row.get(0)?, row.get(1)?);
     Ok((|| {
         let corrupt = |what: String| Error::Corrupt(format!("conflict for {path:?}: {what}"));
         Ok(Conflict {
             path: StorePath::new(&path).map_err(|e| corrupt(e.to_string()))?,
-            copy: StorePath::new(&copy).map_err(|e| corrupt(e.to_string()))?,
+            copy: copy
+                .map(|c| StorePath::new(&c).map_err(|e| corrupt(e.to_string())))
+                .transpose()?,
         })
     })())
 }

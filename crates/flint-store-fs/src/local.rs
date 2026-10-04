@@ -85,6 +85,40 @@ fn with_timestamp(path: &StorePath, millis: u128) -> Result<StorePath> {
     Ok(StorePath::new(format!("{TRASH_DIR}/{relative}"))?)
 }
 
+/// Lets several owners share one store (for example two simulated devices, or a syncer and the app).
+impl<T: LocalFs + ?Sized> LocalFs for std::sync::Arc<T> {
+    fn list(&self) -> Result<Vec<FileEntry>> {
+        (**self).list()
+    }
+    fn exists(&self, path: &StorePath) -> Result<bool> {
+        (**self).exists(path)
+    }
+    fn read(&self, path: &StorePath) -> Result<Vec<u8>> {
+        (**self).read(path)
+    }
+    fn read_prefix(&self, path: &StorePath, len: usize) -> Result<Vec<u8>> {
+        (**self).read_prefix(path, len)
+    }
+    fn entry(&self, path: &StorePath) -> Result<FileEntry> {
+        (**self).entry(path)
+    }
+    fn write_atomic(&self, path: &StorePath, bytes: &[u8]) -> Result<()> {
+        (**self).write_atomic(path, bytes)
+    }
+    fn remove(&self, path: &StorePath) -> Result<()> {
+        (**self).remove(path)
+    }
+    fn move_file(&self, from: &StorePath, to: &StorePath) -> Result<()> {
+        (**self).move_file(from, to)
+    }
+    fn hash(&self, path: &StorePath) -> Result<ContentHash> {
+        (**self).hash(path)
+    }
+    fn trash(&self, path: &StorePath) -> Result<StorePath> {
+        (**self).trash(path)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

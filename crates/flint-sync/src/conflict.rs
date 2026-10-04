@@ -11,6 +11,16 @@ use crate::DeviceName;
 /// (UTC), and a file without an extension just gets the suffix. The caller adds a counter if that name
 /// is already taken.
 pub fn conflict_copy_path(path: &StorePath, device: &DeviceName, now: SystemTime) -> StorePath {
+    conflict_copy_path_numbered(path, device, now, 1)
+}
+
+/// [`conflict_copy_path`] for when that name is taken: attempt 2 and up append `-2`, `-3`, ... after the time.
+pub fn conflict_copy_path_numbered(
+    path: &StorePath,
+    device: &DeviceName,
+    now: SystemTime,
+    attempt: u32,
+) -> StorePath {
     let seconds = now
         .duration_since(UNIX_EPOCH)
         .map_or(0, |d| d.as_secs() as i64);
@@ -21,7 +31,11 @@ pub fn conflict_copy_path(path: &StorePath, device: &DeviceName, now: SystemTime
 
     let p = path.as_path();
     let stem = p.file_stem().unwrap_or("");
-    let suffix = format!("conflict-{device}-{stamp}");
+    let suffix = if attempt <= 1 {
+        format!("conflict-{device}-{stamp}")
+    } else {
+        format!("conflict-{device}-{stamp}-{attempt}")
+    };
     let name = match p.extension() {
         Some(ext) => format!("{stem}.{suffix}.{ext}"),
         None => format!("{stem}.{suffix}"),
@@ -74,6 +88,17 @@ mod tests {
             name("Images/pic.PNG", t),
             "Images/pic.conflict-Pixel-8-20261004-1234.PNG"
         );
+    }
+
+    #[test]
+    fn numbered_attempts_extend_the_name_without_moving_the_extension() {
+        let path = StorePath::new("dir/a.md").unwrap();
+        let device = DeviceName::new("d");
+        let n = |attempt| conflict_copy_path_numbered(&path, &device, at(0), attempt).to_string();
+        assert_eq!(n(1), "dir/a.conflict-d-19700101-0000.md");
+        assert_eq!(n(2), "dir/a.conflict-d-19700101-0000-2.md");
+        assert_eq!(n(10), "dir/a.conflict-d-19700101-0000-10.md");
+        assert_eq!(conflict_copy_path(&path, &device, at(0)).to_string(), n(1));
     }
 
     #[test]

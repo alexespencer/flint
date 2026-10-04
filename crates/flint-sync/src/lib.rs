@@ -8,10 +8,23 @@
 //! not been agreed or backed up.** Changed files are told apart by hash (local) and ETag (remote), never
 //! by timestamp, and every upload is conditional, so a concurrent change is detected and surfaced.
 
+mod codec;
 mod conflict;
 mod device;
+mod engine;
+mod error;
 mod plan;
+mod report;
 
-pub use conflict::conflict_copy_path;
+pub use codec::{Codec, KeysCodec};
+pub use conflict::{conflict_copy_path, conflict_copy_path_numbered};
 pub use device::DeviceName;
-pub use plan::{Action, ConflictKind, LocalFile, ReconcileReason, RemoteFile, UploadMode, plan};
+pub use engine::Syncer;
+pub use error::{Error, Result};
+pub use plan::{
+    Action, ConflictKind, LocalFile, ReconcileReason, RemoteFile, UploadMode, plan, plan_path,
+};
+pub use report::{ConflictOutcome, ConflictReport, Refusal, SyncReport};
+
+#[cfg(test)]
+mod testing;

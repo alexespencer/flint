@@ -167,14 +167,17 @@ fn awkward_paths_round_trip() {
 fn a_conflict_can_exist_without_a_baseline() {
     // the same new file name created on two devices: nothing was ever agreed
     let mut s = state();
-    s.mark_conflict(&p("new.md"), &p("new.conflict-phone-20261004-1200.md"))
-        .unwrap();
+    s.mark_conflict(
+        &p("new.md"),
+        Some(&p("new.conflict-phone-20261004-1200.md")),
+    )
+    .unwrap();
     assert_eq!(s.baseline(&p("new.md")).unwrap(), None);
     assert_eq!(
         s.conflict(&p("new.md")).unwrap(),
         Some(Conflict {
             path: p("new.md"),
-            copy: p("new.conflict-phone-20261004-1200.md")
+            copy: Some(p("new.conflict-phone-20261004-1200.md"))
         })
     );
     assert_eq!(s.conflict(&p("other.md")).unwrap(), None);
@@ -183,14 +186,17 @@ fn a_conflict_can_exist_without_a_baseline() {
 #[test]
 fn conflicts_are_listed_and_marking_again_updates_the_copy() {
     let mut s = state();
-    s.mark_conflict(&p("b.md"), &p("b.conflict-1.md")).unwrap();
-    s.mark_conflict(&p("a.md"), &p("a.conflict-1.md")).unwrap();
-    s.mark_conflict(&p("b.md"), &p("b.conflict-2.md")).unwrap();
+    s.mark_conflict(&p("b.md"), Some(&p("b.conflict-1.md")))
+        .unwrap();
+    s.mark_conflict(&p("a.md"), Some(&p("a.conflict-1.md")))
+        .unwrap();
+    s.mark_conflict(&p("b.md"), Some(&p("b.conflict-2.md")))
+        .unwrap();
     let listed: Vec<_> = s
         .conflicts()
         .unwrap()
         .into_iter()
-        .map(|c| (c.path.to_string(), c.copy.to_string()))
+        .map(|c| (c.path.to_string(), c.copy.unwrap().to_string()))
         .collect();
     assert_eq!(
         listed,
@@ -205,7 +211,8 @@ fn conflicts_are_listed_and_marking_again_updates_the_copy() {
 fn resolving_records_the_new_baseline_and_lifts_the_flag_together() {
     let mut s = state();
     s.record(&baseline("a.md", "old base")).unwrap();
-    s.mark_conflict(&p("a.md"), &p("a.conflict-x.md")).unwrap();
+    s.mark_conflict(&p("a.md"), Some(&p("a.conflict-x.md")))
+        .unwrap();
 
     let after = baseline("a.md", "remote's version");
     s.resolve(&after).unwrap();
@@ -213,7 +220,8 @@ fn resolving_records_the_new_baseline_and_lifts_the_flag_together() {
     assert_eq!(s.conflict(&p("a.md")).unwrap(), None);
 
     // also for a path that never had a baseline
-    s.mark_conflict(&p("b.md"), &p("b.conflict-x.md")).unwrap();
+    s.mark_conflict(&p("b.md"), Some(&p("b.conflict-x.md")))
+        .unwrap();
     s.resolve(&baseline("b.md", "r")).unwrap();
     assert!(s.baseline(&p("b.md")).unwrap().is_some() && s.conflict(&p("b.md")).unwrap().is_none());
 }
@@ -223,7 +231,8 @@ fn clearing_a_conflict_leaves_the_baseline_alone() {
     let mut s = state();
     let b = baseline("a.md", "x");
     s.record(&b).unwrap();
-    s.mark_conflict(&p("a.md"), &p("a.conflict-x.md")).unwrap();
+    s.mark_conflict(&p("a.md"), Some(&p("a.conflict-x.md")))
+        .unwrap();
     s.clear_conflict(&p("a.md")).unwrap();
     s.clear_conflict(&p("a.md")).unwrap();
     assert_eq!(s.baseline(&p("a.md")).unwrap(), Some(b));
@@ -233,8 +242,8 @@ fn clearing_a_conflict_leaves_the_baseline_alone() {
 #[test]
 fn resolving_one_conflict_does_not_touch_another() {
     let mut s = state();
-    s.mark_conflict(&p("a.md"), &p("a.c.md")).unwrap();
-    s.mark_conflict(&p("b.md"), &p("b.c.md")).unwrap();
+    s.mark_conflict(&p("a.md"), Some(&p("a.c.md"))).unwrap();
+    s.mark_conflict(&p("b.md"), Some(&p("b.c.md"))).unwrap();
     s.resolve(&baseline("a.md", "x")).unwrap();
     assert_eq!(s.conflicts().unwrap().len(), 1);
     assert!(s.conflict(&p("b.md")).unwrap().is_some());
@@ -249,7 +258,8 @@ fn state_survives_closing_and_reopening() {
     {
         let mut s = SyncState::open(&db).unwrap();
         s.record(&baseline("a.md", "x")).unwrap();
-        s.mark_conflict(&p("b.md"), &p("b.conflict.md")).unwrap();
+        s.mark_conflict(&p("b.md"), Some(&p("b.conflict.md")))
+            .unwrap();
         // dropped here with no explicit close or flush, as when the process is killed
     }
     let s = SyncState::open(&db).unwrap();
@@ -393,4 +403,28 @@ fn damaged_rows_are_reported_not_panicked_on_or_skipped() {
         )
         .unwrap();
     assert!(matches!(s.conflicts(), Err(Error::Corrupt(_))));
+}
+
+#[test]
+fn a_conflict_can_have_no_copy_and_release_drops_the_baseline_with_the_flag() {
+    // edited here, deleted there: no other version exists to keep
+    let mut s = state();
+    s.record(&baseline("a.md", "x")).unwrap();
+    s.mark_conflict(&p("a.md"), None).unwrap();
+    assert_eq!(
+        s.conflict(&p("a.md")).unwrap(),
+        Some(Conflict {
+            path: p("a.md"),
+            copy: None
+        })
+    );
+    s.release(&p("a.md")).unwrap();
+    assert_eq!(
+        (
+            s.baseline(&p("a.md")).unwrap(),
+            s.conflict(&p("a.md")).unwrap()
+        ),
+        (None, None)
+    );
+    s.release(&p("never.md")).unwrap();
 }

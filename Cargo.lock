@@ -809,12 +809,18 @@ dependencies = [
 name = "flint-sync"
 version = "0.0.0"
 dependencies = [
+ "bytes",
  "flint-core",
+ "flint-crypto",
  "flint-remote",
+ "flint-store-fs",
  "flint-sync-state",
+ "object_store",
  "proptest",
+ "tempfile",
  "thiserror",
  "time",
+ "tokio",
 ]
 
 [[package]]

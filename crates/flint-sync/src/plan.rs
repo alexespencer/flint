@@ -116,11 +116,12 @@ pub fn plan(
     paths
         .into_iter()
         .filter(|path| !held.contains(*path))
-        .filter_map(|path| plan_one(path, local.get(path), remote.get(path), baselines.get(path)))
+        .filter_map(|path| plan_path(path, local.get(path), remote.get(path), baselines.get(path)))
         .collect()
 }
 
-fn plan_one(
+/// [`plan`] for one path, from fresh state. The executor uses it to re-plan a file whose write was refused.
+pub fn plan_path(
     path: &StorePath,
     local: Option<&LocalFile>,
     remote: Option<&RemoteFile>,
