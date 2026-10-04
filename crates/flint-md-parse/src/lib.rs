@@ -457,6 +457,31 @@ mod tests {
     }
 
     #[test]
+    fn only_true_and_false_are_booleans_as_in_yaml_1_2() {
+        let note = parse(
+            "---\nreal: true\nalso: false\nanswer: yes\nreply: n\nflag: on\nletter: y\nlist: [x, y]\nnull_ish: ~\nnum: 0777\n---\n",
+        );
+        let front = note.frontmatter.unwrap();
+        assert_eq!(front["real"], true);
+        assert_eq!(front["also"], false);
+        for key in ["answer", "reply", "flag", "letter"] {
+            assert!(
+                front[key].is_string(),
+                "{key} should stay a string, got {:?}",
+                front[key]
+            );
+        }
+        assert_eq!(front["answer"], "yes");
+        assert_eq!(front["list"], json!(["x", "y"]));
+        assert!(front["null_ish"].is_null());
+        assert_eq!(
+            front["num"].as_f64(),
+            Some(777.0),
+            "a leading zero is decimal, not legacy octal"
+        );
+    }
+
+    #[test]
     fn frontmatter_tags_and_aliases() {
         let list = parse(
             "---\ntags: [a, \"#b\", c]\naliases:\n  - The Baron\n  - Baron Vallaki\n---\n#d\n",

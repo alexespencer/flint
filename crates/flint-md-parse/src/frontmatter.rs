@@ -14,7 +14,11 @@ pub(crate) fn parse(yaml: &str) -> Result<Option<Front>, String> {
         return Ok(None);
     }
     // The parser's message quotes a snippet of the document over many lines; the first line says what is wrong.
-    let value: Value = serde_saphyr::from_str(yaml).map_err(|e| {
+    // Obsidian reads YAML 1.2, where only `true` and `false` are booleans. The parser's default also
+    // accepts the 1.1 forms, which would turn `reply: n` or `status: yes` into booleans.
+    let mut options = serde_saphyr::Options::default();
+    options.strict_booleans = true;
+    let value: Value = serde_saphyr::from_str_with_options(yaml, options).map_err(|e| {
         let message = e.to_string();
         format!(
             "invalid YAML: {}",
