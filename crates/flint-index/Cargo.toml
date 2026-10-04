@@ -1,0 +1,24 @@
+[package]
+name = "flint-index"
+description = "Local search and link index for one store: backlinks, search, link resolution. Rebuildable; never synced."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+flint-core = { version = "0.0.0", path = "../flint-core" }
+flint-md-parse = { version = "0.0.0", path = "../flint-md-parse" }
+hex = "0.4.3"
+rusqlite = { version = "0.40.2", features = ["bundled-sqlcipher-vendored-openssl"] }
+serde_json = "1.0.151"
+thiserror = "2.0.21"
+zeroize = "1.9.0"
+
+[dev-dependencies]
+proptest = "1.11.0"
+tempfile = "3.27.0"
