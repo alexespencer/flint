@@ -4,6 +4,7 @@
   import { backLayer } from "./lib/layers";
   import { autoLockMinutes } from "./lib/settings";
   import { pieces } from "./lib/snippet";
+  import { ago } from "./lib/time";
   import { baseName, buildTree, isNote, isWithin, moveTargets, parentOf, title, type TreeNode } from "./lib/tree";
   import ConflictView from "./ConflictView.svelte";
   import ContextMenu, { type MenuItem } from "./ContextMenu.svelte";
@@ -46,6 +47,9 @@
   let status = $state("");
   let statusIsError = $state(false);
   let syncing = $state(false);
+  /** When the last sync finished without problems, for the "Synced 2 min ago" in the footer. */
+  let lastSyncedAt = $state<number | null>(null);
+  let now = $state(Date.now()); // ticks, so "2 min ago" keeps counting
   let folderInfos = $state<FolderInfo[]>([]);
   const folders = $derived(folderInfos.map((f) => f.path));
   let creating = $state<null | "note" | "folder">(null);
@@ -59,7 +63,7 @@
   let syncTimer: ReturnType<typeof setTimeout> | undefined;
   /** Counts local changes, so a sync can tell whether more happened while it ran. */
   let changes = 0;
-  let unsynced = false;
+  let unsynced = $state(false);
   let searchTimer: ReturnType<typeof setTimeout> | undefined;
   let lastActivity = Date.now();
   /** A narrow screen shows one pane at a time: the file list, or the open note. */
@@ -237,11 +241,32 @@
     menu = { x, y, items };
   }
 
-  function showNewMenu(event: MouseEvent) {
+  /** The stores: switch between them, or add one. (Settings and Lock have their own buttons.) */
+  function showStoreMenu(event: MouseEvent) {
     const box = (event.currentTarget as HTMLElement).getBoundingClientRect();
     menu = {
       x: box.left,
       y: box.bottom + 4,
+      items: [
+        ...stores.map((s) => ({
+          label: s.name,
+          checked: s.id === store.id,
+          action: () => {
+            if (s.id !== store.id) leaveThen(() => onswitch(s.id));
+          },
+        })),
+        { label: "", separator: true, action: () => {} },
+        { label: "Add store…", action: () => leaveThen(onadd) },
+      ],
+    };
+  }
+
+  /** New note / new folder, opening below the button (or above it, for the round button at the bottom). */
+  function showNewMenu(event: MouseEvent, above = false) {
+    const box = (event.currentTarget as HTMLElement).getBoundingClientRect();
+    menu = {
+      x: above ? box.right - 190 : box.left,
+      y: above ? box.top - 96 : box.bottom + 4,
       items: [
         { label: "New note", action: () => startCreating("note") },
         { label: "New folder", action: () => startCreating("folder") },
@@ -378,6 +403,7 @@
       } else if (problems.length) say(`Synced with problems: ${problems[0]}${problems.length > 1 ? ` (+${problems.length - 1} more)` : ""}`, true);
       else if (result.conflicts.length) say(result.conflicts[0] + " — see Conflicts", true);
       else say(`Synced: ${summarise(result)}`);
+      if (problems.length === 0) lastSyncedAt = Date.now();
       if (changes === changesAtStart && problems.length === 0) unsynced = false;
     } catch (e) {
       if (errorKind(e) === "locked") onchange();
@@ -461,6 +487,7 @@
     }
     timers = [
       setInterval(() => sync(), SYNC_EVERY_MS),
+      setInterval(() => (now = Date.now()), 20_000),
       setInterval(() => {
         const minutes = autoLockMinutes();
         if (minutes > 0 && Date.now() - lastActivity > minutes * 60_000) lock();
@@ -482,17 +509,10 @@
 <div class="app" class:narrow>
   <aside class:away={narrow && pane !== "list"}>
     <header>
-      {#if stores.length > 1}
-        <select value={store.id} onchange={(e) => {
-            const id = e.currentTarget.value;
-            leaveThen(() => onswitch(id));
-          }} aria-label="Store">
-          {#each stores as s (s.id)}<option value={s.id}>{s.name}</option>{/each}
-        </select>
-      {:else}
-        <strong class="storename">{store.name}</strong>
-      {/if}
-      <button title="New note or folder" aria-label="New note or folder" onclick={showNewMenu}>＋</button>
+      <button class="store" onclick={showStoreMenu} aria-haspopup="menu" title="Switch store or add a store">
+        <span class="store-name">{store.name}</span><span class="caret">▾</span>
+      </button>
+      <button class="icon sync" class:spinning={syncing} title="Sync now" aria-label="Sync now" onclick={() => sync(true)} disabled={syncing}>⟳</button>
       <button class="icon" title="Settings" aria-label="Settings" onclick={() => (showSettings = true)}>⚙</button>
     </header>
     <input
@@ -503,6 +523,12 @@
       oninput={searchSoon}
       aria-label="Search notes"
     />
+    <div class="listbar">
+      <span class="dim">{hits ? "Search results" : "Notes"}</span>
+      {#if !narrow}
+        <button class="new-button" onclick={(e) => showNewMenu(e)} aria-haspopup="menu">＋ New ▾</button>
+      {/if}
+    </div>
     {#if creating}
       <form onsubmit={submitNew} class="new">
         <!-- svelte-ignore a11y_autofocus -->
@@ -532,14 +558,18 @@
         <FileTree nodes={tree} selected={current?.path ?? null} {expanded} {conflicted} ontoggle={toggle} onopen={openNote} onmenu={showMenu} />
         {#if files.length === 0}
           <p class="dim pad">
-            No notes yet. Make one with ＋, or drop markdown files into<br /><code>{store.folder}</code>
+            No notes yet. Make one with New, or drop markdown files into<br /><code>{store.folder}</code>
           </p>
         {/if}
       {/if}
     </nav>
+    {#if narrow}
+      <button class="fab" aria-label="New note or folder" aria-haspopup="menu" onclick={(e) => showNewMenu(e, true)}>＋</button>
+    {/if}
     <footer>
-      <button onclick={() => sync(true)} disabled={syncing}>{syncing ? "Syncing…" : "Sync now"}</button>
-      <button onclick={() => leaveThen(onadd)}>Add store</button>
+      <span class="syncstate dim" class:error={statusIsError && !syncing}>
+        {syncing ? "Syncing…" : unsynced ? "Changes not synced yet" : lastSyncedAt ? `Synced ${ago(lastSyncedAt, now)}` : "Not synced yet"}
+      </span>
       <button onclick={() => lock()} title="Lock every store; each needs its password{isAndroid ? " or fingerprint" : ""} to open again">
         {stores.length > 1 ? "Lock all" : "Lock"}
       </button>
@@ -693,6 +723,7 @@
   }
   aside {
     border-right: 1px solid var(--border);
+    position: relative; /* the round "new" button is placed against it */
   }
   .right {
     border-left: 1px solid var(--border);
@@ -710,12 +741,90 @@
     line-height: 1;
     padding: 4px 9px;
   }
-  .storename {
+  /* the store's name is a button that opens the store menu */
+  button.store {
     flex: 1;
-    padding-left: 4px;
+    min-width: 0;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 6px;
+    background: none;
+    border-color: transparent;
+    font-weight: 600;
+    font-size: 15px;
+    padding: 5px 8px;
   }
-  aside header select {
+  button.store:hover:not(:disabled) {
+    background: var(--bg-hover);
+  }
+  .store-name {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .caret {
+    color: var(--fg-dim);
+    font-size: 11px;
+    flex: none;
+  }
+  button.sync.spinning {
+    animation: turn 1s linear infinite;
+  }
+  @keyframes turn {
+    to {
+      transform: rotate(360deg);
+    }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    button.sync.spinning {
+      animation: none;
+      opacity: 0.5;
+    }
+  }
+  .listbar {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 0 10px 4px 14px;
+    font-size: 12px;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+  }
+  .new-button {
+    font-size: 12px;
+    padding: 2px 8px;
+    text-transform: none;
+    letter-spacing: 0;
+  }
+  /* the round "new" button of a phone, bottom right of the list */
+  .fab {
+    position: absolute;
+    right: 16px;
+    bottom: 64px;
+    width: 52px;
+    height: 52px;
+    border-radius: 50%;
+    padding: 0;
+    font-size: 26px;
+    line-height: 1;
+    background: var(--accent);
+    border-color: var(--accent);
+    color: var(--accent-fg);
+    box-shadow: 0 4px 14px rgb(0 0 0 / 0.3);
+    z-index: 3;
+  }
+  .fab:hover:not(:disabled) {
+    background: var(--accent);
+    filter: brightness(1.08);
+  }
+  .syncstate {
     flex: 1;
+    min-width: 0;
+    font-size: 12px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
   }
   .search,
   .new {
@@ -733,13 +842,10 @@
   }
   aside footer {
     display: flex;
-    gap: 6px;
+    align-items: center;
+    gap: 8px;
     padding: 8px 10px;
     border-top: 1px solid var(--border);
-  }
-  aside footer button {
-    flex: 1;
-    padding-inline: 4px;
   }
   main {
     display: flex;

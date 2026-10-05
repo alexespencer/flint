@@ -4,6 +4,10 @@
   export interface MenuItem {
     label: string;
     danger?: boolean;
+    /** Marks the current choice in a list of choices (a tick in front of the label). */
+    checked?: boolean;
+    /** A dividing line instead of an item (its label is not shown). */
+    separator?: boolean;
     /** Shown dimmed and not clickable, to say why there is nothing to choose. */
     disabled?: boolean;
     action: () => void;
@@ -25,6 +29,9 @@
     top = Math.max(8, Math.min(y, window.innerHeight - height - 8));
   });
 
+  // when the menu is a list of choices, every label leaves room for the tick so they line up
+  const hasTicks = $derived(items.some((item) => item.checked !== undefined));
+
   function choose(item: MenuItem) {
     onclose();
     item.action();
@@ -35,10 +42,16 @@
 
 <div class="scrim" role="presentation" onmousedown={onclose} oncontextmenu={(e) => (e.preventDefault(), onclose())}></div>
 <ul class="menu" role="menu" bind:this={menu} style:left="{left}px" style:top="{top}px">
-  {#each items as item (item.label)}
-    <li role="none">
-      <button role="menuitem" class:danger={item.danger} disabled={item.disabled} onclick={() => choose(item)}>{item.label}</button>
-    </li>
+  {#each items as item, i (i)}
+    {#if item.separator}
+      <li class="sep" role="separator"></li>
+    {:else}
+      <li role="none">
+        <button role="menuitemradio" aria-checked={item.checked} class:danger={item.danger} disabled={item.disabled} onclick={() => choose(item)}>
+          {#if hasTicks}<span class="tick">{item.checked ? "✓" : ""}</span>{/if}{item.label}
+        </button>
+      </li>
+    {/if}
   {/each}
 </ul>
 
@@ -71,6 +84,15 @@
   }
   .menu button:hover {
     background: var(--bg-hover);
+  }
+  .tick {
+    display: inline-block;
+    width: 1.3em;
+  }
+  .sep {
+    height: 1px;
+    margin: 4px 6px;
+    background: var(--border);
   }
   .menu button:disabled {
     color: var(--fg-dim);
