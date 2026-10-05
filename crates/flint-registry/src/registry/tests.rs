@@ -6,11 +6,25 @@ use tempfile::TempDir;
 use super::*;
 use crate::{Error, MemorySecrets, RemoteSettings};
 
+/// An absolute path for the test's made-up folders: `/f/work` is absolute on macOS and Linux, but on Windows an
+/// absolute path needs a drive (`C:/f/work`).
+fn abs(path: &str) -> std::path::PathBuf {
+    if cfg!(windows) {
+        std::path::PathBuf::from(format!("C:{path}"))
+    } else {
+        std::path::PathBuf::from(path)
+    }
+}
+
 fn record(name: &str, folder: &str) -> StoreRecord {
     StoreRecord {
         id: StoreId::generate(),
         name: name.into(),
-        folder: folder.into(),
+        folder: if folder.starts_with('/') {
+            abs(folder)
+        } else {
+            folder.into()
+        },
         remote: RemoteSettings {
             bucket: "bucket".into(),
             prefix: name.into(),
@@ -98,13 +112,13 @@ fn a_moved_store_can_be_pointed_at_its_new_folder() {
     let work = record("Work", "/f/work");
     registry.add(work.clone()).unwrap();
     registry.add(record("Home", "/f/home")).unwrap();
-    registry.set_folder(&work.id, "/g/work").unwrap();
-    assert_eq!(registry.get(&work.id).unwrap().folder, Path::new("/g/work"));
+    registry.set_folder(&work.id, abs("/g/work")).unwrap();
+    assert_eq!(registry.get(&work.id).unwrap().folder, abs("/g/work"));
     assert!(matches!(
-        registry.set_folder(&work.id, "/f/home/x"),
+        registry.set_folder(&work.id, abs("/f/home/x")),
         Err(Error::NestedStore { .. })
     ));
-    registry.set_folder(&work.id, "/g/work").unwrap(); // its own current folder is fine
+    registry.set_folder(&work.id, abs("/g/work")).unwrap(); // its own current folder is fine
 }
 
 #[test]

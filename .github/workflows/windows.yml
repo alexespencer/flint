@@ -1,11 +1,11 @@
 # Builds the Windows installer and runs the tests on Windows. See docs/windows.md.
 #
-# - every push to any branch: tests, and an installer you can download from the run's "Artifacts"
+# - every push to any branch: builds an installer you can download from the run's "Artifacts", then runs the tests
 # - a tag like v0.1.0: the same, and the installer is attached to a GitHub release
 # - the "Run workflow" button on the Actions tab runs it by hand
 #
 # Minutes: Windows runners count double against a private repo's free allowance (2,000 minutes a month on the
-# Free plan, so about 1,000 Windows minutes). A cached run takes about 8-12 minutes per job. Public repos are free.
+# Free plan, so about 1,000 Windows minutes). Public repos are free.
 name: Windows
 
 on:
@@ -26,19 +26,6 @@ env:
   CARGO_TERM_COLOR: always
 
 jobs:
-  test:
-    runs-on: windows-latest
-    steps:
-      - uses: actions/checkout@v4
-      - name: Rust (the version is pinned in rust-toolchain.toml)
-        run: rustup show
-      - uses: Swatinem/rust-cache@v2
-      # SQLCipher builds OpenSSL from source: it needs NASM, Perl (already on the runner) and the MSVC tools
-      - uses: ilammy/setup-nasm@v1
-      - uses: ilammy/msvc-dev-cmd@v1
-      - name: Tests
-        run: cargo test --workspace
-
   installer:
     runs-on: windows-latest
     steps:
@@ -47,6 +34,7 @@ jobs:
       - name: Rust (the version is pinned in rust-toolchain.toml)
         run: rustup show
       - uses: Swatinem/rust-cache@v2
+      # SQLCipher builds OpenSSL from source: it needs NASM, Perl (already on the runner) and the MSVC tools
       - uses: ilammy/setup-nasm@v1
       - uses: ilammy/msvc-dev-cmd@v1
       - name: Frontend dependencies
@@ -66,3 +54,9 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           files: target/release/bundle/nsis/*.exe
+      # After the installer, so a failing test cannot stop it being built and uploaded. In the release profile,
+      # so the dependencies compiled for the installer (OpenSSL above all) are reused instead of built again.
+      # flint-tauri is left out: it has two small thread tests, and including it would build Tauri a second
+      # time with different features. --no-fail-fast: a Windows run should report every failure, not just the first.
+      - name: Tests (release profile)
+        run: cargo test --release --workspace --exclude flint-tauri --no-fail-fast
