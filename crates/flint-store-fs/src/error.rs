@@ -17,6 +17,14 @@ pub enum Error {
     #[error("{0} is not a note path")]
     NotANotePath(StorePath),
 
+    /// Only on Windows, which refuses names that macOS, Linux and Android allow.
+    #[error("{path} cannot be stored on Windows: \"{name}\" {why}")]
+    UnsupportedName {
+        path: StorePath,
+        name: String,
+        why: &'static str,
+    },
+
     #[error("file name is not valid UTF-8: {0:?}")]
     NonUtf8Name(PathBuf),
 

@@ -4,9 +4,9 @@
   "version": "0.1.0",
   "identifier": "dev.flint.app",
   "build": {
-    "beforeDevCommand": "cd \"$(git rev-parse --show-toplevel)/app\" && bun run dev",
+    "beforeDevCommand": "bun run --cwd ../app dev",
     "devUrl": "http://localhost:1420",
-    "beforeBuildCommand": "cd \"$(git rev-parse --show-toplevel)/app\" && bun run build",
+    "beforeBuildCommand": "bun run --cwd ../app build",
     "frontendDist": "../../app/dist"
   },
   "app": {

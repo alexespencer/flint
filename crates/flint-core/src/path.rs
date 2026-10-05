@@ -1,7 +1,9 @@
 use std::fmt;
 use std::str::FromStr;
 
-use camino::{Utf8Component, Utf8Path, Utf8PathBuf};
+use camino::{Utf8Path, Utf8PathBuf};
+
+use crate::portable;
 
 use crate::{Error, Result};
 
@@ -23,21 +25,39 @@ impl StorePath {
             reason,
         };
 
-        let mut canonical = Utf8PathBuf::new();
-        for component in Utf8Path::new(path).components() {
-            match component {
-                Utf8Component::Normal(name) => canonical.push(name),
-                Utf8Component::RootDir | Utf8Component::Prefix(_) => {
-                    return Err(invalid("must be relative"));
-                }
-                Utf8Component::ParentDir => return Err(invalid("must not contain `..`")),
-                Utf8Component::CurDir => return Err(invalid("must not start with `.`")),
+        // Only `/` separates names, on every platform: the string is an S3 key, and `camino` would read `\`
+        // as a separator on Windows, so the same key would mean different paths on different machines. A
+        // backslash is refused outright; it would be a path separator (and a way out of the store) on Windows.
+        if path.contains('\\') {
+            return Err(invalid("must not contain a backslash"));
+        }
+        if path.starts_with('/') {
+            return Err(invalid("must be relative"));
+        }
+        let mut names = Vec::new();
+        for (i, name) in path.split('/').enumerate() {
+            match name {
+                "" => {} // a doubled or trailing slash
+                "." if i == 0 => return Err(invalid("must not start with `.`")),
+                "." => {}
+                ".." => return Err(invalid("must not contain `..`")),
+                _ => names.push(name),
             }
         }
-        if canonical.as_str().is_empty() {
+        if names.is_empty() {
             return Err(invalid("must not be empty"));
         }
-        Ok(Self(canonical))
+        Ok(Self(Utf8PathBuf::from(names.join("/"))))
+    }
+
+    /// Why this path could not be stored as a file on Windows, if it could not: the first name in it that
+    /// Windows refuses, and the reason. `None` on a path that is fine there. (Windows is stricter than
+    /// macOS, Linux and Android about what a file may be called, so a note made on those can have a name it
+    /// cannot hold.)
+    pub fn windows_problem(&self) -> Option<(&str, &'static str)> {
+        self.as_str()
+            .split('/')
+            .find_map(|name| portable::windows_name_problem(name).map(|why| (name, why)))
     }
 
     pub fn as_str(&self) -> &str {
@@ -106,6 +126,9 @@ mod tests {
             "a/..",
             "./note.md",
             ".",
+            r"a\b.md",
+            r"..\x",
+            r"C:\x",
         ] {
             assert!(
                 matches!(StorePath::new(input), Err(Error::InvalidStorePath { .. })),

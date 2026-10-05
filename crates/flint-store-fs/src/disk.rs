@@ -26,8 +26,25 @@ impl DiskFs {
         &self.root
     }
 
-    fn resolve(&self, path: &StorePath) -> PathBuf {
-        self.root.join(path.as_str())
+    /// Where `path` is on disk. Built name by name, never by pasting the string on, so what a name contains
+    /// cannot change where it points; on Windows a name that system cannot hold is refused instead.
+    fn resolve(&self, path: &StorePath) -> Result<PathBuf> {
+        #[cfg(windows)]
+        if let Some((name, why)) = path.windows_problem() {
+            return Err(Error::UnsupportedName {
+                path: path.clone(),
+                name: name.to_owned(),
+                why,
+            });
+        }
+        Ok(self.join(path.as_str()))
+    }
+
+    /// `relative` (a `/`-separated path) under the root, name by name.
+    fn join(&self, relative: &str) -> PathBuf {
+        let mut full = self.root.clone();
+        full.extend(relative.split('/').filter(|name| !name.is_empty()));
+        full
     }
 
     /// Every folder in the store, including empty ones (which no file lists), as paths relative to the
@@ -77,7 +94,7 @@ impl DiskFs {
                     path: entry.path().to_owned(),
                     source: e,
                 })?;
-            dirs.push((StorePath::new(relative.as_str())?, created));
+            dirs.push((StorePath::new(slash_separated(relative))?, created));
         }
         dirs.sort();
         Ok(dirs)
@@ -85,12 +102,12 @@ impl DiskFs {
 
     /// Whether `path` is a folder.
     pub fn is_dir(&self, path: &StorePath) -> bool {
-        self.resolve(path).is_dir()
+        self.resolve(path).is_ok_and(|dir| dir.is_dir())
     }
 
     /// Makes a folder (and any missing parents). An error if something that is not a folder is in the way.
     pub fn create_dir(&self, path: &StorePath) -> Result<()> {
-        fs::create_dir_all(self.resolve(path)).map_err(|e| Error::io(path, e))
+        fs::create_dir_all(self.resolve(path)?).map_err(|e| Error::io(path, e))
     }
 
     /// Tidies up after a file was removed: removes the folder it was in if that is now empty, then that
@@ -101,7 +118,7 @@ impl DiskFs {
             if ancestor.as_str().is_empty() {
                 break;
             }
-            let dir = self.root.join(ancestor.as_str());
+            let dir = self.join(ancestor.as_str());
             let Ok(entries) = fs::read_dir(&dir) else {
                 continue; // already gone: carry on upwards
             };
@@ -148,11 +165,57 @@ impl DiskFs {
             }
             Ok(only_clutter)
         }
-        let dir = self.resolve(path);
+        let dir = self.resolve(path)?;
         if !dir.is_dir() {
             return Ok(());
         }
         prune(&dir).map(|_| ()).map_err(|e| Error::io(path, e))
+    }
+}
+
+/// A relative path as names joined with `/` (on Windows `Utf8Path::as_str` would keep its backslashes).
+fn slash_separated(relative: &Utf8Path) -> String {
+    relative
+        .components()
+        .map(|component| component.as_str())
+        .collect::<Vec<_>>()
+        .join("/")
+}
+
+/// Puts the finished temp file in place of `dest`. Windows refuses to replace a file that another program
+/// has open (a virus scanner, a sync client) for a moment, so it is tried a few times there.
+fn replace_file(tmp: tempfile::NamedTempFile, dest: &Path) -> io::Result<()> {
+    #[cfg(not(windows))]
+    {
+        tmp.persist(dest).map(|_| ()).map_err(|e| e.error)
+    }
+    #[cfg(windows)]
+    {
+        let mut tmp = tmp;
+        for attempt in 0.. {
+            match tmp.persist(dest) {
+                Ok(_) => return Ok(()),
+                Err(e) if attempt < 8 && e.error.kind() == io::ErrorKind::PermissionDenied => {
+                    tmp = e.file;
+                    std::thread::sleep(std::time::Duration::from_millis(50));
+                }
+                Err(e) => return Err(e.error),
+            }
+        }
+        unreachable!()
+    }
+}
+
+/// Makes a rename in `dir` durable. Not possible on Windows, which cannot open a folder to flush it.
+fn sync_dir(dir: &Path) -> io::Result<()> {
+    #[cfg(unix)]
+    {
+        File::open(dir)?.sync_all()
+    }
+    #[cfg(not(unix))]
+    {
+        let _ = dir;
+        Ok(())
     }
 }
 
@@ -190,7 +253,11 @@ impl LocalFs for DiskFs {
                 .expect("walked entries are under the root");
             let relative = Utf8Path::from_path(relative)
                 .ok_or_else(|| Error::NonUtf8Name(relative.to_owned()))?;
-            let path = StorePath::new(relative.as_str())?;
+            // A name that is not a valid store path (it has a backslash in it) cannot be synced; it is left
+            // alone, like a hidden file, rather than making the whole folder unreadable.
+            let Ok(path) = StorePath::new(slash_separated(relative)) else {
+                continue;
+            };
             if !is_sync_path(&path) {
                 continue;
             }
@@ -209,17 +276,18 @@ impl LocalFs for DiskFs {
     }
 
     fn exists(&self, path: &StorePath) -> Result<bool> {
-        fs::exists(self.resolve(path)).map_err(|e| Error::io(path, e))
+        fs::exists(self.resolve(path)?).map_err(|e| Error::io(path, e))
     }
 
     fn read(&self, path: &StorePath) -> Result<Vec<u8>> {
-        fs::read(self.resolve(path)).map_err(|e| Error::io(path, e))
+        fs::read(self.resolve(path)?).map_err(|e| Error::io(path, e))
     }
 
     fn read_prefix(&self, path: &StorePath, len: usize) -> Result<Vec<u8>> {
+        let full = self.resolve(path)?;
         let read = || -> io::Result<Vec<u8>> {
             let mut bytes = Vec::with_capacity(len);
-            File::open(self.resolve(path))?
+            File::open(&full)?
                 .take(len as u64)
                 .read_to_end(&mut bytes)?;
             Ok(bytes)
@@ -228,7 +296,7 @@ impl LocalFs for DiskFs {
     }
 
     fn entry(&self, path: &StorePath) -> Result<FileEntry> {
-        let meta = fs::metadata(self.resolve(path)).map_err(|e| Error::io(path, e))?;
+        let meta = fs::metadata(self.resolve(path)?).map_err(|e| Error::io(path, e))?;
         if !meta.is_file() {
             return Err(Error::NotFound(path.clone()));
         }
@@ -241,7 +309,7 @@ impl LocalFs for DiskFs {
     }
 
     fn write_atomic(&self, path: &StorePath, bytes: &[u8]) -> Result<()> {
-        let dest = self.resolve(path);
+        let dest = self.resolve(path)?;
         let dir = dest.parent().expect("a store path always has a parent");
         let write = || -> io::Result<()> {
             fs::create_dir_all(dir)?;
@@ -251,28 +319,30 @@ impl LocalFs for DiskFs {
                 .tempfile_in(dir)?;
             tmp.write_all(bytes)?;
             tmp.as_file().sync_all()?;
-            tmp.persist(&dest).map_err(|e| e.error)?;
-            File::open(dir)?.sync_all() // make the rename itself durable
+            replace_file(tmp, &dest)?;
+            sync_dir(dir)
         };
         write().map_err(|e| Error::io(path, e))
     }
 
     fn remove(&self, path: &StorePath) -> Result<()> {
-        fs::remove_file(self.resolve(path)).map_err(|e| Error::io(path, e))
+        fs::remove_file(self.resolve(path)?).map_err(|e| Error::io(path, e))
     }
 
     fn move_file(&self, from: &StorePath, to: &StorePath) -> Result<()> {
-        let dest = self.resolve(to);
+        let dest = self.resolve(to)?;
+        let source = self.resolve(from)?;
         if let Some(dir) = dest.parent() {
             fs::create_dir_all(dir).map_err(|e| Error::io(to, e))?;
         }
-        fs::rename(self.resolve(from), dest).map_err(|e| Error::io(from, e))
+        fs::rename(source, dest).map_err(|e| Error::io(from, e))
     }
 
     /// Streams the file through SHA-256 instead of loading it, so large attachments stay cheap.
     fn hash(&self, path: &StorePath) -> Result<ContentHash> {
+        let full = self.resolve(path)?;
         let stream = || -> io::Result<ContentHash> {
-            let mut file = File::open(self.resolve(path))?;
+            let mut file = File::open(&full)?;
             let mut hasher = Sha256::new();
             let mut chunk = vec![0u8; 64 * 1024];
             loop {
@@ -461,6 +531,22 @@ mod folder_tests {
         let time = |name: &str| listed.iter().find(|(d, _)| d.as_str() == name).unwrap().1;
         assert!(time("second") > time("first"));
         assert!(time("first") > SystemTime::now() - std::time::Duration::from_secs(60));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_file_with_a_backslash_in_its_name_is_left_out_of_the_listing_not_an_error() {
+        let dir = tempfile::tempdir().unwrap();
+        let fs = DiskFs::new(dir.path());
+        fs.write_atomic(&p("fine.md"), b"x").unwrap();
+        std::fs::write(dir.path().join("odd\\name.md"), b"x").unwrap(); // legal on macOS and Linux
+        let listed: Vec<_> = fs
+            .list()
+            .unwrap()
+            .iter()
+            .map(|e| e.path.to_string())
+            .collect();
+        assert_eq!(listed, ["fine.md"]);
     }
 
     #[test]

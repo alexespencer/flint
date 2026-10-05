@@ -5,6 +5,7 @@
 mod error;
 mod hash;
 mod path;
+pub mod portable;
 
 pub use error::{Error, Result};
 pub use hash::ContentHash;
