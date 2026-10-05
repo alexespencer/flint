@@ -1,5 +1,6 @@
 <script lang="ts">
   import { onMount } from "svelte";
+  import { backLayer } from "./lib/layers";
 
   let {
     title,
@@ -13,6 +14,8 @@
     onpick: (folder: string) => void;
     onclose: () => void;
   } = $props();
+
+  $effect(() => backLayer(() => onclose())); // not tracked: the effect runs once, when the layer opens
 
   let query = $state("");
   let search: HTMLInputElement | undefined = $state();

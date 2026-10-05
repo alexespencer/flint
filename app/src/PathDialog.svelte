@@ -1,5 +1,6 @@
 <script lang="ts">
   import { onMount, untrack } from "svelte";
+  import { backLayer } from "./lib/layers";
 
   let {
     title,
@@ -22,6 +23,8 @@
     onconfirm: (value: string) => void;
     onclose: () => void;
   } = $props();
+
+  $effect(() => backLayer(() => onclose())); // not tracked: the effect runs once, when the layer opens
 
   let value = $state(untrack(() => initial)); // the starting text; typing replaces it
   let input: HTMLInputElement | undefined = $state();

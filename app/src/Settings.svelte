@@ -1,5 +1,6 @@
 <script lang="ts">
   import { api, errorMessage, isAndroid, type BiometricState, type StoreInfo } from "./lib/api";
+  import { backLayer } from "./lib/layers";
   import { AUTO_LOCK_CHOICES, autoLockMinutes, setAutoLockMinutes } from "./lib/settings";
 
   let {
@@ -8,6 +9,8 @@
     onclose,
     onchange,
   }: { store: StoreInfo; stores: StoreInfo[]; onclose: () => void; onchange: () => void } = $props();
+
+  $effect(() => backLayer(() => onclose())); // not tracked: the effect runs once, when the layer opens
 
   const method = isAndroid ? "fingerprint" : "Touch ID";
 

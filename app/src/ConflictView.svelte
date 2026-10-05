@@ -1,6 +1,7 @@
 <script lang="ts">
   import { api, errorMessage, type Conflict } from "./lib/api";
   import Editor from "./Editor.svelte";
+  import { backLayer } from "./lib/layers";
 
   let {
     storeId,
@@ -8,6 +9,8 @@
     onclose,
     onresolved,
   }: { storeId: string; conflict: Conflict; onclose: () => void; onresolved: () => void } = $props();
+
+  $effect(() => backLayer(() => onclose())); // not tracked: the effect runs once, when the layer opens
 
   let mine = $state<string | null>(null);
   let theirs = $state<string | null>(null);

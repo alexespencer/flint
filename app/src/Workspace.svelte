@@ -1,6 +1,7 @@
 <script lang="ts">
   import { onDestroy, onMount } from "svelte";
   import { api, errorKind, errorMessage, isAndroid, summarise, type FolderInfo, type Hit, type StoreInfo } from "./lib/api";
+  import { backLayer } from "./lib/layers";
   import { autoLockMinutes } from "./lib/settings";
   import { pieces } from "./lib/snippet";
   import { baseName, buildTree, isNote, isWithin, moveTargets, parentOf, title, type TreeNode } from "./lib/tree";
@@ -434,6 +435,19 @@
   function noteActivity() {
     lastActivity = Date.now();
   }
+
+  // On a phone Back leaves the open note for the list (and closes the links sheet first), not the app.
+  $effect(() => {
+    if (narrow && pane === "note") {
+      return backLayer(() => {
+        flush();
+        pane = "list";
+      });
+    }
+  });
+  $effect(() => {
+    if (narrow && showInfo) return backLayer(() => (showInfo = false));
+  });
 
   let timers: ReturnType<typeof setInterval>[] = [];
   onMount(async () => {

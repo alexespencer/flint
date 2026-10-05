@@ -1,4 +1,6 @@
 <script lang="ts">
+  import { backLayer } from "./lib/layers";
+
   export interface MenuItem {
     label: string;
     danger?: boolean;
@@ -8,6 +10,8 @@
   }
 
   let { x, y, items, onclose }: { x: number; y: number; items: MenuItem[]; onclose: () => void } = $props();
+
+  $effect(() => backLayer(() => onclose())); // not tracked: the effect runs once, when the layer opens
 
   let menu: HTMLUListElement | undefined = $state();
   let left = $state(0);
