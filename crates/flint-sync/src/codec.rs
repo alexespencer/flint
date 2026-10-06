@@ -15,6 +15,10 @@ pub trait Codec {
         b: &[u8],
     ) -> Result<bool, flint_crypto::Error>;
 
+    /// Whether `sealed` really is ciphertext of `path` that these keys can open. Starting with Flint's header
+    /// is not enough: a file damaged or overwritten in part by another program still starts with it.
+    fn opens(&self, path: &StorePath, sealed: &[u8]) -> bool;
+
     /// Re-encrypts `sealed` (a stored version of `from`) so it is valid as the contents of `to`.
     fn reseal(
         &self,
@@ -28,6 +32,10 @@ pub trait Codec {
 pub struct KeysCodec(pub StoreKeys);
 
 impl Codec for KeysCodec {
+    fn opens(&self, path: &StorePath, sealed: &[u8]) -> bool {
+        self.0.open(path, sealed).is_ok()
+    }
+
     fn same_plaintext(
         &self,
         path: &StorePath,

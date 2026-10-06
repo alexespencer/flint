@@ -63,6 +63,12 @@ fn refusal(why: &Refusal) -> String {
     match why {
         Refusal::RemoteNotCiphertext => "the object on S3 is not encrypted by Flint".into(),
         Refusal::LocalNotCiphertext => "not encrypted yet".into(),
+        Refusal::LocalNotDecryptable => {
+            "this file was damaged or edited outside Flint and no longer opens; it was not uploaded, and the last good version is still on S3".into()
+        }
+        Refusal::RemoteNotDecryptable => {
+            "the copy on S3 does not open (damaged there, or at the wrong name); it was not downloaded".into()
+        }
         Refusal::HashMismatch { .. } => "the download did not match its recorded hash".into(),
         Refusal::LocalChangedDuringSync => "it changed while syncing; next time".into(),
         Refusal::KeyFileDiverged => {

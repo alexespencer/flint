@@ -550,6 +550,73 @@ async fn a_remote_object_that_is_not_ciphertext_is_never_written_locally() {
 }
 
 #[tokio::test]
+async fn a_local_file_that_no_longer_decrypts_is_not_uploaded_over_the_good_copy() {
+    let world = World::new();
+    let mut mac = world.device("Mac");
+    let mut phone = world.device("Phone");
+    mac.write("a.md", "good text");
+    mac.sync().await;
+    phone.sync().await;
+
+    // another program overwrote part of the encrypted file: it still starts with Flint's header
+    let mut damaged = mac.syncer.fs().read(&p("a.md")).unwrap();
+    let last = damaged.len() - 1;
+    damaged[last] ^= 0xff;
+    mac.syncer.fs().write_atomic(&p("a.md"), &damaged).unwrap();
+
+    let report = mac.sync().await;
+    assert_eq!(report.refused, [(p("a.md"), Refusal::LocalNotDecryptable)]);
+    assert!(report.uploaded.is_empty());
+    assert_eq!(
+        phone.sync().await.downloaded,
+        Vec::<flint_core::StorePath>::new()
+    );
+    assert_eq!(
+        phone.read("a.md").as_deref(),
+        Some("good text"),
+        "the other device still has the good copy"
+    );
+    assert_eq!(
+        mac.sync().await.refused.len(),
+        1,
+        "and it is reported every time"
+    );
+}
+
+#[tokio::test]
+async fn a_remote_object_that_does_not_decrypt_is_not_written_over_a_good_local_copy() {
+    let world = World::new();
+    let mut mac = world.device("Mac");
+    mac.write("a.md", "good text");
+    mac.sync().await;
+
+    // ciphertext of another note put at this name: right header, but sealed under a different path
+    let wrong = world
+        .keys
+        .seal(&p("other.md"), b"not for this path")
+        .unwrap();
+    world
+        .remote()
+        .put(
+            &p("a.md"),
+            Bytes::from(wrong.clone()),
+            &flint_core::ContentHash::of(&wrong),
+            Precondition::Unconditional,
+        )
+        .await
+        .unwrap();
+
+    let report = mac.sync().await;
+    assert_eq!(report.refused, [(p("a.md"), Refusal::RemoteNotDecryptable)]);
+    assert!(report.downloaded.is_empty());
+    assert_eq!(
+        mac.read("a.md").as_deref(),
+        Some("good text"),
+        "the local copy is untouched"
+    );
+}
+
+#[tokio::test]
 async fn a_download_that_does_not_match_its_recorded_hash_is_refused() {
     let world = World::new();
     let mut mac = world.device("Mac");
@@ -592,9 +659,9 @@ async fn a_download_that_does_not_match_its_recorded_hash_is_refused() {
 }
 
 #[tokio::test]
-async fn ciphertext_swapped_between_names_by_the_server_downloads_but_never_decrypts() {
-    // Sync treats contents as opaque, so it cannot tell. The path bound into every file's encryption is
-    // what catches it, the moment the app opens the file.
+async fn ciphertext_swapped_between_names_by_the_server_is_refused_not_downloaded() {
+    // The path bound into every file's encryption is what catches it. Sync used to download it and leave the
+    // app to fail when it opened the file; now sync checks that what it is about to write opens as that name.
     let world = World::new();
     let (mut mac, mut phone) = (world.device("Mac"), world.device("Phone"));
     mac.write("a.md", "contents of a");
@@ -613,11 +680,12 @@ async fn ciphertext_swapped_between_names_by_the_server_downloads_but_never_decr
         .unwrap();
 
     let report = phone.sync().await;
-    assert_eq!(report.downloaded.len(), 2);
-    assert!(matches!(
-        phone.enc.read(&p("a.md")),
-        Err(flint_store_fs::Error::Crypto(flint_crypto::Error::Decrypt))
-    ));
+    assert_eq!(report.downloaded, [p("b.md")]);
+    assert_eq!(report.refused, [(p("a.md"), Refusal::RemoteNotDecryptable)]);
+    assert!(
+        !phone.syncer.fs().exists(&p("a.md")).unwrap(),
+        "the swapped file is not written at all"
+    );
     assert_eq!(phone.read("b.md").as_deref(), Some("contents of b"));
 }
 

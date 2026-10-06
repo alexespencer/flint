@@ -8,6 +8,13 @@ pub enum Refusal {
     /// The remote object does not start with Flint's file header. Nothing is downloaded or compared: it
     /// could be a planted file, and plaintext in the store folder would be adopted as a user's note.
     RemoteNotCiphertext,
+    /// The local file starts like a Flint file but does not decrypt: it was damaged, or part of it was
+    /// overwritten, outside Flint. Uploading it would replace the good copy on every other device with a
+    /// file nobody can open, so it is left alone. The last good version is still on S3 and on your other devices.
+    LocalNotDecryptable,
+    /// The object on S3 starts like a Flint file but does not decrypt (damaged there, or put at the wrong name).
+    /// It is not written here, so a good local copy is never replaced by an unreadable one.
+    RemoteNotDecryptable,
     /// The local file is plaintext (a dropped-in file not yet adopted). Uploading it would leak it.
     LocalNotCiphertext,
     /// The downloaded bytes do not match the SHA-256 the remote recorded for them: damaged in transit

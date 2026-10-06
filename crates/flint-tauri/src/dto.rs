@@ -129,6 +129,10 @@ fn refusal(why: &Refusal) -> &'static str {
     match why {
         Refusal::RemoteNotCiphertext => "the object on S3 is not encrypted by Flint",
         Refusal::LocalNotCiphertext => "not encrypted yet",
+        Refusal::LocalNotDecryptable => {
+            "damaged or edited outside Flint, so it no longer opens; not uploaded (the last good version is still on S3)"
+        }
+        Refusal::RemoteNotDecryptable => "the copy on S3 does not open; not downloaded",
         Refusal::HashMismatch { .. } => "the download did not match its recorded hash",
         Refusal::LocalChangedDuringSync => "it changed while syncing; it will go next time",
         Refusal::KeyFileDiverged => "the password was changed on two devices at once",

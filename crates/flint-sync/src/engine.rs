@@ -125,6 +125,11 @@ impl<L: LocalFs, R: RemoteStore, C: Codec> Syncer<L, R, C> {
         }
     }
 
+    /// Whether stored bytes decrypt as `path`. `key.json` is plaintext by design and is not checked here.
+    fn opens(&self, path: &StorePath, bytes: &[u8]) -> bool {
+        path.as_str() == KEY_FILE || self.codec.opens(path, bytes)
+    }
+
     // ---- reading the two sides ------------------------------------------------------------------
 
     async fn snapshot(&self) -> Result<Snapshot> {
@@ -271,6 +276,9 @@ impl<L: LocalFs, R: RemoteStore, C: Codec> Syncer<L, R, C> {
         if !looks_sealed(path, &bytes) {
             return Ok(Outcome::Refused(Refusal::LocalNotCiphertext));
         }
+        if !self.opens(path, &bytes) {
+            return Ok(Outcome::Refused(Refusal::LocalNotDecryptable));
+        }
         let hash = ContentHash::of(&bytes);
         let precondition = match mode {
             UploadMode::Create => Precondition::MustNotExist,
@@ -325,6 +333,9 @@ impl<L: LocalFs, R: RemoteStore, C: Codec> Syncer<L, R, C> {
         };
         if let Some(refusal) = check_downloaded(path, &object.bytes, &object.entry) {
             return Ok(Outcome::Refused(refusal));
+        }
+        if !self.opens(path, &object.bytes) {
+            return Ok(Outcome::Refused(Refusal::RemoteNotDecryptable));
         }
         if !self.local_still_is(path, expected_local)? {
             return Ok(Outcome::Refused(Refusal::LocalChangedDuringSync));
