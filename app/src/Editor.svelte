@@ -1,17 +1,18 @@
 <script lang="ts">
   import { onDestroy, onMount } from "svelte";
-  import { Annotation, EditorState, RangeSetBuilder } from "@codemirror/state";
+  import { Annotation, EditorState, Prec, RangeSetBuilder } from "@codemirror/state";
   import {
     Decoration,
     EditorView,
     ViewPlugin,
+    WidgetType,
     keymap,
     type DecorationSet,
     type ViewUpdate,
   } from "@codemirror/view";
-  import { defaultKeymap, history, historyKeymap } from "@codemirror/commands";
-  import { markdown } from "@codemirror/lang-markdown";
-  import { HighlightStyle, syntaxHighlighting } from "@codemirror/language";
+  import { defaultKeymap, history, historyKeymap, indentWithTab } from "@codemirror/commands";
+  import { markdown, markdownLanguage } from "@codemirror/lang-markdown";
+  import { HighlightStyle, indentUnit, syntaxHighlighting, syntaxTree } from "@codemirror/language";
   import { tags } from "@lezer/highlight";
   import { wikilinkAt } from "./lib/wikilink";
 
@@ -89,6 +90,111 @@
     { decorations: (plugin) => plugin.decorations },
   );
 
+  // ---- task lists: `- [ ] item` shows a checkbox that can be clicked ------------------------------------
+
+  /** Ticks or unticks the box whose `[` is at `pos`. */
+  function toggleBox(view: EditorView, pos: number) {
+    if (view.state.readOnly) return;
+    const inner = view.state.sliceDoc(pos + 1, pos + 2);
+    view.dispatch({ changes: { from: pos + 1, to: pos + 2, insert: inner === " " ? "x" : " " } });
+  }
+
+  class CheckboxWidget extends WidgetType {
+    checked: boolean;
+    constructor(checked: boolean) {
+      super();
+      this.checked = checked;
+    }
+    eq(other: CheckboxWidget) {
+      return other.checked === this.checked;
+    }
+    toDOM(view: EditorView) {
+      const box = document.createElement("input");
+      box.type = "checkbox";
+      box.className = "cm-task-checkbox";
+      box.checked = this.checked;
+      box.setAttribute("aria-label", this.checked ? "Done" : "Not done");
+      box.tabIndex = -1; // Tab is for indenting the list, not for moving between boxes
+      // keep the cursor where it is: a click should toggle, not move the caret
+      box.addEventListener("mousedown", (event) => event.preventDefault());
+      box.addEventListener("click", (event) => {
+        event.preventDefault();
+        toggleBox(view, view.posAtDOM(box));
+      });
+      return box;
+    }
+    ignoreEvent() {
+      return true; // the checkbox handles its own events
+    }
+  }
+
+  const doneText = Decoration.mark({ class: "cm-task-done" });
+
+  /** A checkbox in place of each `- [ ]` / `- [x]`, unless the cursor is in it (then the source shows, to edit it). */
+  function taskDecorations(view: EditorView): DecorationSet {
+    const builder = new RangeSetBuilder<Decoration>();
+    const selection = view.state.selection.ranges;
+    for (const { from, to } of view.visibleRanges) {
+      syntaxTree(view.state).iterate({
+        from,
+        to,
+        enter(node) {
+          if (node.name !== "TaskMarker") return;
+          const state = view.state;
+          const checked = state.sliceDoc(node.from, node.to) !== "[ ]";
+          const inMarker = selection.some((r) => r.from <= node.to && r.to >= node.from && !(r.empty && r.head === node.to));
+          if (!inMarker) {
+            // the bullet (`-`, `*`, `1.`) and the space after it give way to the box, as in Obsidian
+            const bullet = node.node.parent?.parent?.firstChild;
+            if (bullet?.name === "ListMark" && bullet.to < node.from) builder.add(bullet.from, node.from, Decoration.replace({}));
+            builder.add(node.from, node.to, Decoration.replace({ widget: new CheckboxWidget(checked) }));
+          }
+          if (checked) {
+            // dim and strike the task's text only, not the indent in front of it or the space after the box
+            const end = state.doc.lineAt(node.from).to;
+            let start = node.to;
+            while (start < end && state.sliceDoc(start, start + 1) === " ") start++;
+            if (start < end) builder.add(start, end, doneText);
+          }
+        },
+      });
+    }
+    return builder.finish();
+  }
+
+  const taskPlugin = ViewPlugin.fromClass(
+    class {
+      decorations: DecorationSet;
+      constructor(view: EditorView) {
+        this.decorations = taskDecorations(view);
+      }
+      update(update: ViewUpdate) {
+        if (update.docChanged || update.selectionSet || update.viewportChanged || syntaxTree(update.state) !== syntaxTree(update.startState)) {
+          this.decorations = taskDecorations(update.view);
+        }
+      }
+    },
+    { decorations: (plugin) => plugin.decorations },
+  );
+
+  /** Ctrl/⌘+Enter ticks or unticks the task on the cursor's line. (Enter itself continues a checklist: the markdown
+   *  mode's own keymap does that.) */
+  function toggleTaskAtCursor(view: EditorView): boolean {
+    if (view.state.readOnly) return false;
+    const line = view.state.doc.lineAt(view.state.selection.main.head);
+    let marker = -1;
+    syntaxTree(view.state).iterate({
+      from: line.from,
+      to: line.to,
+      enter(node) {
+        if (node.name === "TaskMarker" && marker < 0) marker = node.from;
+      },
+    });
+    if (marker < 0) return false;
+    toggleBox(view, marker);
+    return true;
+  }
+
   const highlight = HighlightStyle.define([
     { tag: tags.heading1, fontSize: "1.55em", fontWeight: "700" },
     { tag: tags.heading2, fontSize: "1.3em", fontWeight: "700" },
@@ -112,7 +218,11 @@
         extensions: [
           history(),
           keymap.of([...defaultKeymap, ...historyKeymap]),
-          markdown(),
+          markdown({ base: markdownLanguage }), // GitHub-flavoured: task lists, strikethrough, tables
+          // Tab indents a list item (Shift+Tab outdents) instead of moving the browser's focus out of the editor
+          indentUnit.of("    "),
+          Prec.high(keymap.of([{ key: "Mod-Enter", run: toggleTaskAtCursor }, indentWithTab])),
+          taskPlugin,
           syntaxHighlighting(highlight),
           wikilinkPlugin,
           EditorView.lineWrapping,
@@ -184,6 +294,25 @@
   .editor :global(.cm-wikilink),
   .editor :global(.cm-wikilink *) {
     color: var(--accent) !important;
+  }
+  .editor :global(.cm-task-checkbox) {
+    width: 1.05em;
+    height: 1.05em;
+    margin: 0 0.45em 0 0;
+    vertical-align: -0.12em;
+    accent-color: var(--accent);
+    cursor: pointer;
+  }
+  .editor :global(.cm-task-done) {
+    color: var(--fg-dim);
+    text-decoration: line-through;
+  }
+  /* a bigger target to tap */
+  @media (hover: none) {
+    .editor :global(.cm-task-checkbox) {
+      width: 1.3em;
+      height: 1.3em;
+    }
   }
   .editor :global(.cm-wikilink-rendered) {
     cursor: pointer;
