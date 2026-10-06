@@ -5,7 +5,7 @@ A headless shell over `flint-app-service`, the same API the app will use.
 ```sh
 flint create-store Notes --bucket flint --prefix notes --endpoint https://<account>.r2.cloudflarestorage.com --access-key-id <id>
 flint join Notes --bucket flint --prefix notes --endpoint https://... --access-key-id <id>   # on a second device
-flint sync | status | resolve <path> | passwd | lock | unlock | stores | switch <name> | adopt | forget <name>
+flint sync | status | resolve <path> | passwd | lock | unlock | stores | switch <name> | adopt | remove <name> | delete-store <name> | reupload
 ```
 
 - Prompts for the S3 secret key and passwords without echo. `--password-stdin` reads them from standard input, one per
@@ -19,3 +19,14 @@ flint sync | status | resolve <path> | passwd | lock | unlock | stores | switch 
 - `cargo test -p flint-registry -- --ignored` runs the keychain round trip against the real login keychain.
 - `FLINT_SAMPLE_VAULT=<dir> cargo test -p flint-app-service -- --ignored` round-trips a copy of a real vault between
   two devices (in memory, no network).
+
+## Removing and deleting a store
+
+- `flint remove <name>` takes a store off this device. It stays on S3 (join it again any time) and its folder is renamed
+  to `<name>.removed-<date>-<time>`, not deleted. The store is synced first, and the removal is refused if anything would
+  be left only here (a failed or refused file, a conflict, a locked store); `--force` skips that check. (`forget` is an
+  alias.)
+- `flint delete-store <name>` deletes every file of the store from S3, for every device, then removes it here. You type
+  the store's name to confirm. It cannot be undone.
+- If a store vanishes from S3 (deleted there, or the bucket emptied), `flint sync` stops and changes nothing on the
+  device, instead of reading it as "every file was deleted". `flint reupload` puts this device's copy back.

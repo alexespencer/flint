@@ -79,6 +79,13 @@ impl<L: LocalFs, R: RemoteStore, C: Codec> Syncer<L, R, C> {
     /// read either side as a whole (or the sync database) is an error.
     pub async fn sync(&mut self) -> Result<SyncReport> {
         let snapshot = self.snapshot().await?;
+        // A store this device has synced always has a key file on S3. If it is gone, the rest is most likely gone
+        // too, and planning would read that as "deleted elsewhere" and trash every note here (and the key file,
+        // which would leave the store impossible to unlock). Do nothing, and say so.
+        let key = StorePath::new(KEY_FILE).expect("a valid path");
+        if snapshot.baselines.contains_key(&key) && !snapshot.remote.contains_key(&key) {
+            return Err(Error::RemoteStoreMissing);
+        }
         let held: BTreeSet<StorePath> = self
             .state
             .conflicts()?

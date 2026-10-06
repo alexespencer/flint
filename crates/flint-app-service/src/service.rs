@@ -469,7 +469,7 @@ impl<S: SecretStore, C: Connect> AppService<S, C> {
         Ok((record, keys))
     }
 
-    fn remote_for(&self, record: &StoreRecord) -> Result<C::Remote> {
+    pub(crate) fn remote_for(&self, record: &StoreRecord) -> Result<C::Remote> {
         let secret = self
             .registry
             .s3_secret(&record.id)?

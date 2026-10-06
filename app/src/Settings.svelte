@@ -1,5 +1,7 @@
 <script lang="ts">
+  import PathDialog from "./PathDialog.svelte";
   import { api, errorMessage, isAndroid, type BiometricState, type StoreInfo } from "./lib/api";
+  import { removeStoreFlow } from "./lib/storeActions";
   import { backLayer } from "./lib/layers";
   import { AUTO_LOCK_CHOICES, autoLockMinutes, setAutoLockMinutes } from "./lib/settings";
 
@@ -18,6 +20,8 @@
   let biometric = $state<BiometricState | null>(null);
   let busy = $state(false);
   let error = $state("");
+  let notice = $state("");
+  let deleting = $state<StoreInfo | null>(null);
 
   $effect(() => {
     biometric = null;
@@ -44,10 +48,25 @@
     }
   }
 
-  async function forget(target: StoreInfo) {
-    if (!confirm(`Forget "${target.name}" on this device? Its notes on S3${isAndroid ? "" : " and in its folder"} are not touched; you can join it again later.`)) return;
+  async function remove(target: StoreInfo) {
+    error = notice = "";
     try {
-      await api.forgetStore(target.id);
+      const result = await removeStoreFlow(target);
+      if (!result) return;
+      notice = result.keptAs ? `“${target.name}” was removed from this device. Its folder was kept as ${result.keptAs}.` : `“${target.name}” was removed from this device.`;
+      onchange();
+      if (target.id === store.id) onclose();
+    } catch (e) {
+      error = errorMessage(e);
+    }
+  }
+
+  async function deleteEverywhere(target: StoreInfo) {
+    deleting = null;
+    error = notice = "";
+    try {
+      const count = await api.deleteStore(target.id, target.name);
+      notice = `“${target.name}” was deleted: ${count} file${count === 1 ? "" : "s"} removed from S3.`;
       onchange();
       if (target.id === store.id) onclose();
     } catch (e) {
@@ -112,15 +131,32 @@
               </span>
               {#if !isAndroid}<span class="dim" title={s.folder}>{s.folder}</span>{/if}
             </div>
-            <button onclick={() => forget(s)}>Forget</button>
+            <span class="actions">
+              <button onclick={() => remove(s)} title="Take it off this device; it stays on S3">Remove</button>
+              <button class="danger" onclick={() => (deleting = s)} title="Delete it from S3, for every device">Delete…</button>
+            </span>
           </li>
         {/each}
       </ul>
     </section>
 
+    {#if notice}<p class="pad notice">{notice}</p>{/if}
     {#if error}<p class="error pad">{error}</p>{/if}
   </div>
 </div>
+
+{#if deleting}
+  {@const target = deleting}
+  <PathDialog
+    title={`Delete “${target.name}” everywhere`}
+    help={`This deletes every file of “${target.name}” from S3, so no device can use it any more, and removes it from this device. It cannot be undone. Other devices keep their notes until you remove the store there. Type the store's name to confirm.`}
+    initial=""
+    confirmLabel="Delete from S3"
+    reject={(value) => (value === target.name ? null : "Type the name exactly, including capitals.")}
+    onconfirm={() => deleteEverywhere(target)}
+    onclose={() => (deleting = null)}
+  />
+{/if}
 
 <style>
   .backdrop {
@@ -218,5 +254,18 @@
   }
   .pad {
     margin-top: 12px;
+  }
+  .notice {
+    font-size: 13px;
+    color: var(--fg-dim);
+    word-break: break-all;
+  }
+  .actions {
+    display: flex;
+    gap: 6px;
+    flex: none;
+  }
+  button.danger {
+    color: var(--danger);
   }
 </style>

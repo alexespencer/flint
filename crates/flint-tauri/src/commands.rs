@@ -131,11 +131,59 @@ pub async fn switch_store(worker: State<'_, Worker<Service>>, id: String) -> Res
         .map_err(Into::into)
 }
 
+/// Takes a store off this device (its folder is renamed, not deleted; everything is still on S3). Unless
+/// `force`, the store is synced first and the removal is refused if anything would be left only on this
+/// device. Returns where the folder went.
 #[tauri::command]
-pub async fn forget_store(worker: State<'_, Worker<Service>>, id: String) -> Result<()> {
+pub async fn remove_store(
+    app: tauri::AppHandle,
+    worker: State<'_, Worker<Service>>,
+    id: String,
+    force: bool,
+) -> Result<Option<String>> {
     let id = store_id(&id)?;
     worker
-        .call(move |svc| Box::pin(async move { svc.registry_mut().remove(&id) }))
+        .call(move |svc| {
+            Box::pin(async move {
+                let removed = svc.remove_store(&id, force).await?;
+                crate::biometric::forget(&app, svc, &id);
+                Ok::<_, flint_app_service::Error>(
+                    removed.folder_kept_as.map(|p| p.display().to_string()),
+                )
+            })
+        })
+        .await
+        .map_err(Into::into)
+}
+
+/// Deletes a store from S3 for every device, then takes it off this one. `name` must be typed exactly.
+/// Returns how many objects were deleted.
+#[tauri::command]
+pub async fn delete_store(
+    app: tauri::AppHandle,
+    worker: State<'_, Worker<Service>>,
+    id: String,
+    name: String,
+) -> Result<usize> {
+    let id = store_id(&id)?;
+    worker
+        .call(move |svc| {
+            Box::pin(async move {
+                let deleted = svc.delete_store(&id, &name).await?;
+                crate::biometric::forget(&app, svc, &id);
+                Ok::<_, flint_app_service::Error>(deleted)
+            })
+        })
+        .await
+        .map_err(Into::into)
+}
+
+/// Puts this device's copy of a store back onto S3 after the store was deleted there.
+#[tauri::command]
+pub async fn reupload_store(worker: State<'_, Worker<Service>>, id: String) -> Result<SyncDto> {
+    let id = store_id(&id)?;
+    worker
+        .call(move |svc| Box::pin(async move { svc.reupload_store(&id).await.map(SyncDto::from) }))
         .await
         .map_err(Into::into)
 }

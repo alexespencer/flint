@@ -655,6 +655,174 @@ async fn a_store_without_a_password_can_be_given_one_and_other_devices_notice() 
     assert!(!phone.service.registry().list()[0].passwordless);
 }
 
+async fn wipe_the_bucket(bucket: &InMemoryConnect) {
+    let remote = bucket.connect(&settings(), "").unwrap();
+    for entry in remote.list().await.unwrap() {
+        remote.delete(&entry.path, None).await.unwrap();
+    }
+}
+
+#[tokio::test]
+async fn removing_a_store_keeps_its_folder_aside_and_joining_again_brings_everything_back() {
+    let (mut mac, phone, bucket) = two_devices().await;
+    mac.service
+        .save_note(&mac.id(), &p("a.md"), "kept on s3")
+        .unwrap();
+    mac.service
+        .save_note(&mac.id(), &p("deep/b.md"), "also kept")
+        .unwrap();
+    let id = mac.id();
+
+    let removed = mac.service.remove_store(&id, false).await.unwrap(); // syncs first, so nothing is left behind
+    let aside = removed.folder_kept_as.unwrap();
+    assert!(
+        aside
+            .file_name()
+            .unwrap()
+            .to_string_lossy()
+            .starts_with("Notes.removed-"),
+        "{aside:?}"
+    );
+    assert!(
+        aside.join("a.md").is_file(),
+        "the folder is kept, not deleted"
+    );
+    assert!(!mac.dir().exists());
+    assert!(mac.service.registry().list().is_empty());
+
+    // the notes were all on S3: the other device has them, and so does a fresh join
+    phone.sync().await;
+    assert_eq!(phone.read("a.md"), "kept on s3");
+    mac.service.join_store(mac.new_store("pw")).await.unwrap();
+    mac.sync().await;
+    assert_eq!(mac.read("a.md"), "kept on s3");
+    assert_eq!(mac.read("deep/b.md"), "also kept");
+    drop(bucket);
+}
+
+#[tokio::test]
+async fn removal_is_refused_while_something_is_not_on_s3_unless_forced() {
+    let (mut mac, phone, _) = two_devices().await;
+    mac.service
+        .save_note(&mac.id(), &p("a.md"), "start")
+        .unwrap();
+    mac.sync().await;
+    phone.sync().await;
+    mac.service
+        .save_note(&mac.id(), &p("a.md"), "mac edit")
+        .unwrap();
+    phone
+        .service
+        .save_note(&phone.id(), &p("a.md"), "phone edit")
+        .unwrap();
+    phone.sync().await;
+    mac.sync().await; // the mac loses: a conflict that exists only here
+    let id = mac.id();
+    assert_eq!(mac.service.status(&id).unwrap().conflicts.len(), 1);
+
+    let refused = mac.service.remove_store(&id, false).await;
+    assert!(
+        matches!(&refused, Err(Error::NotFullySynced(why)) if why.contains("conflict")),
+        "{refused:?}"
+    );
+    assert_eq!(mac.service.registry().list().len(), 1, "still registered");
+    assert!(mac.dir().join("a.md").exists(), "and nothing moved");
+
+    // a locked store cannot be synced, so it needs force too; the folder is kept either way
+    mac.service.lock_all().unwrap();
+    assert!(matches!(
+        mac.service.remove_store(&id, false).await,
+        Err(Error::Locked(_))
+    ));
+    let removed = mac.service.remove_store(&id, true).await.unwrap();
+    assert!(removed.folder_kept_as.unwrap().join("a.md").is_file());
+    assert!(mac.service.registry().list().is_empty());
+}
+
+#[tokio::test]
+async fn a_wiped_bucket_stops_sync_everywhere_and_one_device_can_put_the_store_back() {
+    let (mac, phone, bucket) = two_devices().await;
+    mac.service
+        .save_note(&mac.id(), &p("a.md"), "precious")
+        .unwrap();
+    mac.sync().await;
+    phone.sync().await;
+
+    wipe_the_bucket(&bucket).await;
+
+    // nothing is emptied or trashed on either device
+    for device in [&mac, &phone] {
+        let result = device.service.sync(&device.id()).await;
+        assert!(
+            matches!(result, Err(Error::StoreMissingOnRemote)),
+            "{result:?}"
+        );
+        assert_eq!(device.read("a.md"), "precious");
+        assert!(device.dir().join(".store/key.json").is_file());
+    }
+    // ...and they can still lock and unlock
+    phone.service.lock_all().unwrap();
+    phone.service.unlock(&phone.id(), "pw").await.unwrap();
+
+    // the mac puts its copy back; the phone sees the store again and carries on
+    let outcome = mac.service.reupload_store(&mac.id()).await.unwrap();
+    assert!(
+        outcome
+            .report
+            .uploaded
+            .iter()
+            .any(|path| path.as_str() == "a.md"),
+        "{:?}",
+        outcome.report.uploaded
+    );
+    phone.sync().await;
+    assert_eq!(phone.read("a.md"), "precious");
+    mac.service
+        .save_note(&mac.id(), &p("b.md"), "after the restore")
+        .unwrap();
+    mac.sync().await;
+    phone.sync().await;
+    assert_eq!(phone.read("b.md"), "after the restore");
+}
+
+#[tokio::test]
+async fn deleting_a_store_needs_its_name_and_empties_s3_for_every_device() {
+    let (mut mac, mut phone, bucket) = two_devices().await;
+    mac.service.save_note(&mac.id(), &p("a.md"), "x").unwrap();
+    mac.sync().await;
+    phone.sync().await;
+    let id = mac.id();
+
+    let wrong = mac.service.delete_store(&id, "notes").await; // the name is case-sensitive
+    assert!(matches!(wrong, Err(Error::NameMismatch)), "{wrong:?}");
+    let remote = bucket.connect(&settings(), "").unwrap();
+    assert!(
+        !remote.list().await.unwrap().is_empty(),
+        "nothing was deleted"
+    );
+    assert_eq!(mac.service.registry().list().len(), 1);
+
+    let deleted = mac.service.delete_store(&id, "Notes").await.unwrap();
+    assert!(deleted >= 2, "the note and the key file: {deleted}");
+    assert!(remote.list().await.unwrap().is_empty());
+    assert!(mac.service.registry().list().is_empty());
+
+    // the other device stops at once, keeps its notes, and can remove the store (the folder is kept)
+    let pid = phone.id();
+    assert!(matches!(
+        phone.service.sync(&pid).await,
+        Err(Error::StoreMissingOnRemote)
+    ));
+    assert_eq!(phone.read("a.md"), "x");
+    let removed = phone.service.remove_store(&pid, true).await.unwrap();
+    assert!(removed.folder_kept_as.unwrap().join("a.md").is_file());
+
+    // a new store can now use the same bucket and folder name
+    let fresh = mac.service.create_store(mac.new_store("another")).await;
+    assert!(fresh.is_ok(), "{fresh:?}");
+    let _ = &mut phone;
+}
+
 #[tokio::test]
 async fn joining_needs_the_right_password_and_an_existing_store() {
     let bucket = InMemoryConnect::new();

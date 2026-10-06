@@ -70,7 +70,7 @@ export interface NewStore {
 
 /** An error from the Rust side: a stable `kind` to branch on and a message to show. */
 export interface CommandError {
-  kind: "locked" | "inConflict" | "alreadyExists" | "biometricCancelled" | "keyInvalidated" | "wrongPassword" | "storeExists" | "noSuchStore" | "passwordChangedElsewhere" | "other";
+  kind: "locked" | "inConflict" | "storeMissingOnRemote" | "notFullySynced" | "nameMismatch" | "alreadyExists" | "biometricCancelled" | "keyInvalidated" | "wrongPassword" | "storeExists" | "noSuchStore" | "passwordChangedElsewhere" | "other";
   message: string;
 }
 
@@ -92,7 +92,12 @@ export const api = {
   lock: (id: string) => invoke<void>("lock", { id }),
   lockAll: () => invoke<void>("lock_all"),
   switchStore: (id: string) => invoke<void>("switch_store", { id }),
-  forgetStore: (id: string) => invoke<void>("forget_store", { id }),
+  /** Takes the store off this device (its folder is renamed, not deleted); returns where the folder went. */
+  removeStore: (id: string, force: boolean) => invoke<string | null>("remove_store", { id, force }),
+  /** Deletes the store from S3 for every device (the name must be typed exactly), then removes it here. */
+  deleteStore: (id: string, name: string) => invoke<number>("delete_store", { id, name }),
+  /** Puts this device's copy back on S3 after the store was deleted there. */
+  reuploadStore: (id: string) => invoke<SyncResult>("reupload_store", { id }),
   changePassword: (id: string, old: string, next: string) =>
     invoke<void>("change_password", { id, old, new: next }),
   sync: (id: string) => invoke<SyncResult>("sync", { id }),

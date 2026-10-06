@@ -1,5 +1,6 @@
 <script lang="ts">
   import { api, errorKind, errorMessage, isAndroid, type BiometricState, type StoreInfo } from "./lib/api";
+  import { removeStoreFlow } from "./lib/storeActions";
 
   let {
     stores,
@@ -122,10 +123,12 @@
     }
   }
 
-  async function forget() {
-    if (confirm(`Forget "${store.name}" on this device? Its folder and its notes on S3 are not touched.`)) {
-      await api.forgetStore(store.id);
-      onchange();
+  async function remove() {
+    try {
+      // a locked store cannot be synced first, so the flow explains that and offers to remove it anyway
+      if (await removeStoreFlow(store)) onchange();
+    } catch (e) {
+      error = errorMessage(e);
     }
   }
 </script>
@@ -170,7 +173,7 @@
     {/if}
     <div class="row">
       <button type="button" class="link" onclick={onadd}>Add another store</button>
-      <button type="button" class="link" onclick={forget}>Forget this store</button>
+      <button type="button" class="link" onclick={remove}>Remove this store</button>
     </div>
   </form>
 </main>

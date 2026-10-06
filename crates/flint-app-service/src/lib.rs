@@ -11,9 +11,11 @@ mod connect;
 mod error;
 mod indexing;
 mod manage;
+mod remove;
 mod service;
 
 pub use connect::{Connect, InMemoryConnect, S3Connect};
 pub use error::{Error, Result};
 pub use indexing::IndexStats;
+pub use remove::Removed;
 pub use service::{AppService, ConflictInfo, NewStore, Status, SyncOutcome};

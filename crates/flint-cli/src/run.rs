@@ -186,13 +186,41 @@ pub async fn run<S: SecretStore, C: Connect>(cli: Cli, env: &mut Env<'_, S, C>) 
             )?;
             Ok(())
         }
-        Command::Forget { name } => {
+        Command::Remove { name, force } => {
             let record = find(env, Some(&name))?;
-            env.service.registry_mut().remove(&record.id)?;
+            let removed = env.service.remove_store(&record.id, force).await?;
             writeln!(
                 env.out,
-                "forgot {name:?}; its folder and its objects on S3 were left alone"
+                "removed {name:?} from this device; it is still on S3"
             )?;
+            if let Some(kept) = removed.folder_kept_as {
+                writeln!(env.out, "its folder was kept as {}", kept.display())?;
+            }
+            Ok(())
+        }
+        Command::DeleteStore { name } => {
+            let record = find(env, Some(&name))?;
+            writeln!(
+                env.out,
+                "This deletes every file of {name:?} from S3, for every device that uses it. It cannot be undone."
+            )?;
+            let typed = env.input.secret("Type the store's name to confirm")?;
+            let deleted = env.service.delete_store(&record.id, &typed).await?;
+            writeln!(
+                env.out,
+                "deleted {deleted} object(s) from S3 and removed {name:?} from this device"
+            )?;
+            Ok(())
+        }
+        Command::Reupload => {
+            let record = find(env, store)?;
+            let outcome = env.service.reupload_store(&record.id).await?;
+            writeln!(
+                env.out,
+                "put this device's copy of {:?} back on S3",
+                record.name
+            )?;
+            output::sync_outcome(env.out, &outcome)?;
             Ok(())
         }
     }

@@ -224,6 +224,9 @@ impl From<flint_app_service::Error> for CmdError {
             E::NoSuchStore => "noSuchStore",
             E::PasswordChangedElsewhere => "passwordChangedElsewhere",
             E::InConflict(_) => "inConflict",
+            E::StoreMissingOnRemote => "storeMissingOnRemote",
+            E::NotFullySynced(_) => "notFullySynced",
+            E::NameMismatch => "nameMismatch",
             E::Local(flint_store_fs::Error::AlreadyExists(_)) => "alreadyExists",
             _ => "other",
         };

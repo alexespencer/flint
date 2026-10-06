@@ -617,6 +617,55 @@ async fn a_remote_object_that_does_not_decrypt_is_not_written_over_a_good_local_
 }
 
 #[tokio::test]
+async fn a_store_whose_key_file_vanished_from_the_remote_is_left_alone_not_emptied() {
+    let world = World::new();
+    let mut mac = world.device("Mac");
+    let mut phone = world.device("Phone");
+    // the store has a key file, as every real store does
+    mac.syncer
+        .fs()
+        .write_atomic(&p(".store/key.json"), world.key_file.to_json().as_bytes())
+        .unwrap();
+    mac.write("a.md", "my notes");
+    mac.sync().await;
+    phone.sync().await;
+    assert!(phone.syncer.fs().exists(&p(".store/key.json")).unwrap());
+
+    // the bucket is emptied (in a console, say)
+    let remote = world.remote();
+    for entry in remote.list().await.unwrap() {
+        remote.delete(&entry.path, None).await.unwrap();
+    }
+
+    for device in [&mut mac, &mut phone] {
+        let result = device.syncer.sync().await;
+        assert!(
+            matches!(result, Err(crate::Error::RemoteStoreMissing)),
+            "{result:?}"
+        );
+        assert_eq!(
+            device.read("a.md").as_deref(),
+            Some("my notes"),
+            "the notes are still here"
+        );
+        assert!(
+            device.syncer.fs().exists(&p(".store/key.json")).unwrap(),
+            "and so is the key file"
+        );
+    }
+}
+
+#[tokio::test]
+async fn a_store_that_never_had_a_key_file_synced_is_not_stopped_by_its_absence() {
+    // the guard is about a store that was synced before; tests, and a brand-new store, have no baseline for it
+    let world = World::new();
+    let mut mac = world.device("Mac");
+    mac.write("a.md", "x");
+    assert_eq!(mac.sync().await.uploaded, [p("a.md")]);
+    assert!(mac.syncer.sync().await.is_ok());
+}
+
+#[tokio::test]
 async fn a_download_that_does_not_match_its_recorded_hash_is_refused() {
     let world = World::new();
     let mut mac = world.device("Mac");

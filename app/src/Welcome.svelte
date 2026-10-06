@@ -14,6 +14,7 @@
   let name = $state("Notes");
   let folder = $state("");
   let folderEdited = $state(false);
+  let nameEdited = $state(false);
   let bucket = $state("");
   let prefix = $state("");
   let prefixEdited = $state(false);
@@ -48,6 +49,13 @@
   let repeat = $state("");
   let busy = $state("");
   let error = $state("");
+
+
+  // Joining: what identifies a store on S3 is its folder in the bucket, so until a name is typed the name follows it
+  // (so a store you remove and join again usually comes back under the name it had).
+  $effect(() => {
+    if (mode === "join" && prefixEdited && !nameEdited && prefix.trim()) name = prefix.trim();
+  });
 
   // Until the user types their own, the folder and prefix follow the store's name.
   $effect(() => {
@@ -122,7 +130,7 @@
       {/if}
     </p>
 
-    <label>Name <input bind:value={name} required /></label>
+    <label>Name <input bind:value={name} oninput={() => (nameEdited = true)} required /></label>
     {#if !isAndroid}
       <label>
         Folder on this Mac

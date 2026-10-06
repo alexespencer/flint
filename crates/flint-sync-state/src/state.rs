@@ -135,6 +135,17 @@ impl SyncState {
         Ok(())
     }
 
+    /// Forgets everything this device knows about what was synced: every baseline and every conflict flag.
+    /// Used to put a device's copy back onto S3 after the store was deleted there: every local file is then
+    /// new to the next sync, which uploads it. Conflict copies are ordinary files and are uploaded as well.
+    pub fn clear_all(&mut self) -> Result<()> {
+        let tx = self.conn.transaction()?;
+        tx.execute("DELETE FROM baselines", [])?;
+        tx.execute("DELETE FROM conflicts", [])?;
+        tx.commit()?;
+        Ok(())
+    }
+
     // ---- conflicts ----------------------------------------------------------------------------
 
     /// Holds `path` back from sync until [`resolve`](Self::resolve) or [`clear_conflict`](Self::clear_conflict).

@@ -238,7 +238,65 @@ async fn mistakes_are_reported_plainly() {
         "{listing}"
     );
 
-    mac.flint("forget Notes", &[]).await.unwrap();
+    // locked, so it cannot be synced first: removal needs --force, and the folder is kept
+    assert!(matches!(
+        mac.flint("remove Notes", &[]).await,
+        Err(Error::Service(ServiceError::Locked(_)))
+    ));
+    let removed = mac.flint("remove Notes --force", &[]).await.unwrap();
+    assert!(removed.contains("its folder was kept as"), "{removed}");
+    assert!(
+        mac.flint("stores", &[])
+            .await
+            .unwrap()
+            .contains("no stores yet")
+    );
+}
+
+#[tokio::test]
+async fn deleting_a_store_asks_for_its_name_and_a_wiped_store_can_be_put_back() {
+    let bucket = InMemoryConnect::new();
+    let mut mac = Instance::new("Mac", &bucket);
+    let args = format!("create-store Notes {}", mac.remote_flags());
+    mac.flint(&args, &["secret", "pw", "pw"]).await.unwrap();
+    mac.write("a.md", "keep me");
+    mac.flint("sync", &[]).await.unwrap();
+
+    // the name must be typed exactly; a wrong one deletes nothing
+    assert!(matches!(
+        mac.flint("delete-store Notes", &["notes"]).await,
+        Err(Error::Service(ServiceError::NameMismatch))
+    ));
+    assert!(mac.flint("status", &[]).await.unwrap().contains("Notes"));
+
+    // an emptied bucket stops sync without touching the notes, and `reupload` puts the store back
+    use flint_app_service::Connect;
+    use flint_remote::RemoteStore;
+    let settings = flint_registry::RemoteSettings {
+        bucket: "b".into(),
+        prefix: "vault".into(),
+        region: "auto".into(),
+        endpoint: None,
+        access_key_id: "k".into(),
+    };
+    let remote = bucket.connect(&settings, "").unwrap();
+    for entry in remote.list().await.unwrap() {
+        remote.delete(&entry.path, None).await.unwrap();
+    }
+    assert!(matches!(
+        mac.flint("sync", &[]).await,
+        Err(Error::Service(ServiceError::StoreMissingOnRemote))
+    ));
+    let back = mac.flint("reupload", &[]).await.unwrap();
+    assert!(back.contains("put this device's copy"), "{back}");
+    assert!(!remote.list().await.unwrap().is_empty());
+
+    let deleted = mac.flint("delete-store Notes", &["Notes"]).await.unwrap();
+    assert!(
+        deleted.contains("deleted") && deleted.contains("from S3"),
+        "{deleted}"
+    );
+    assert!(remote.list().await.unwrap().is_empty());
     assert!(
         mac.flint("stores", &[])
             .await

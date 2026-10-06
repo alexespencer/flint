@@ -64,6 +64,11 @@ pub async fn biometric_unlock(
         .await
 }
 
+/// Drops a store's fingerprint key (a store that is going away has no use for it).
+pub(crate) fn forget(app: &AppHandle, svc: &Service, id: &StoreId) {
+    let _ = platform::disable(app, svc, id);
+}
+
 #[tauri::command]
 pub async fn biometric_disable(
     app: AppHandle,

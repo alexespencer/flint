@@ -9,6 +9,7 @@
   import ConflictView from "./ConflictView.svelte";
   import ContextMenu, { type MenuItem } from "./ContextMenu.svelte";
   import FolderPicker from "./FolderPicker.svelte";
+  import MissingRemote from "./MissingRemote.svelte";
   import PathDialog from "./PathDialog.svelte";
   import Editor from "./Editor.svelte";
   import FileTree from "./FileTree.svelte";
@@ -57,6 +58,9 @@
   let renaming = $state<{ path: string; folder: boolean; links: number } | null>(null);
   let picking = $state<{ path: string; targets: string[] } | null>(null);
   let showSettings = $state(false);
+  /** The store is gone from S3 (see MissingRemote): sync stopped without touching anything here. */
+  let missingRemote = $state(false);
+  let missingDismissed = $state(false);
   let newName = $state("");
   let conflictOpen = $state<StoreInfo["conflicts"][number] | null>(null);
   let saveTimer: ReturnType<typeof setTimeout> | undefined;
@@ -407,6 +411,7 @@
       if (changes === changesAtStart && problems.length === 0) unsynced = false;
     } catch (e) {
       if (errorKind(e) === "locked") onchange();
+      if (errorKind(e) === "storeMissingOnRemote") missingRemote = true;
       say(`Sync failed: ${errorMessage(e)}${unsynced ? " (changes not synced yet)" : ""}`, true);
       if (unsynced) {
         // try again in a while, not in a tight loop
@@ -663,6 +668,21 @@
       moveInto(path, folder);
     }}
     onclose={() => (picking = null)}
+  />
+{/if}
+
+{#if missingRemote && !missingDismissed}
+  <MissingRemote
+    {store}
+    onclose={() => (missingDismissed = true)}
+    onrestored={async () => {
+      missingRemote = false;
+      missingDismissed = false;
+      await loadFiles();
+      onchange();
+      say("Put this device's copy back on S3.");
+    }}
+    onremoved={() => onchange()}
   />
 {/if}
 

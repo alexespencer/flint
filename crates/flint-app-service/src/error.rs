@@ -21,7 +21,10 @@ pub enum Error {
     #[error("this bucket and prefix hold no store (there is no key.json); create one instead")]
     NoSuchStore,
 
-    #[error("this folder is already a store ({0} is there); join or open it instead")]
+    #[error(
+        "this folder already holds a store's key ({0}), left from a store that was forgotten here or made elsewhere; \
+         choose another folder, or rename or remove this one"
+    )]
     FolderIsAStore(&'static str),
 
     #[error("the store folder has no {0}; it was moved or damaged")]
@@ -57,7 +60,19 @@ pub enum Error {
     Local(#[from] flint_store_fs::Error),
 
     #[error(transparent)]
-    Sync(#[from] flint_sync::Error),
+    Sync(flint_sync::Error),
+
+    /// The store is no longer on S3 (deleted there, or the bucket was emptied). Nothing was changed here.
+    #[error(
+        "this store is no longer on S3 (deleted there, or the bucket was emptied); nothing was changed on this device"
+    )]
+    StoreMissingOnRemote,
+
+    #[error("not everything is on S3 yet: {0}")]
+    NotFullySynced(String),
+
+    #[error("the name typed is not this store's name")]
+    NameMismatch,
 
     #[error(transparent)]
     State(#[from] flint_sync_state::Error),
@@ -73,6 +88,15 @@ pub enum Error {
 
     #[error(transparent)]
     Io(#[from] std::io::Error),
+}
+
+impl From<flint_sync::Error> for Error {
+    fn from(error: flint_sync::Error) -> Self {
+        match error {
+            flint_sync::Error::RemoteStoreMissing => Self::StoreMissingOnRemote,
+            other => Self::Sync(other),
+        }
+    }
 }
 
 impl From<flint_crypto::Error> for Error {

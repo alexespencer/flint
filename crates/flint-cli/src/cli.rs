@@ -60,8 +60,20 @@ pub enum Command {
     Status,
     /// Tell sync you have dealt with a conflicted note (merged it, or chosen a side).
     Resolve { path: String },
-    /// Forget a store on this device. Its folder and its objects on S3 are left alone.
-    Forget { name: String },
+    /// Take a store off this device. The store stays on S3 (join it again any time) and its folder is renamed
+    /// to `<name>.removed-<date>`, not deleted. The store is synced first, and the removal is refused if
+    /// anything would be left only here.
+    #[command(alias = "forget")]
+    Remove {
+        name: String,
+        /// Skip the sync and the check (for a store that cannot be unlocked or reached).
+        #[arg(long)]
+        force: bool,
+    },
+    /// Delete a store from S3 for every device, then take it off this one. Asks you to type its name.
+    DeleteStore { name: String },
+    /// Put this device's copy of a store back onto S3, after the store was deleted there.
+    Reupload,
 }
 
 #[derive(Debug, Args)]

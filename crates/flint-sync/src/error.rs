@@ -22,4 +22,12 @@ pub enum Error {
 
     #[error("{0} is not in conflict")]
     NotInConflict(StorePath),
+
+    /// This device has synced the store before, but S3 no longer holds its `key.json`: the store was deleted
+    /// there, or the bucket was emptied. Syncing now would look like every file being deleted, so nothing is
+    /// done on this device.
+    #[error(
+        "the store is no longer on S3 (deleted there, or the bucket was emptied); nothing was changed here"
+    )]
+    RemoteStoreMissing,
 }
