@@ -1,13 +1,14 @@
 # Flint
 
-Encrypted markdown notes for macOS and Android. A folder of `.md` files with `[[links]]`, backlinks and search, like
+Encrypted markdown notes for macOS, Android and Windows. A folder of `.md` files with `[[links]]`, backlinks and search, like
 Obsidian, where every file is encrypted with a password only you know, and each store syncs to an S3 bucket you own.
 Conflicts are kept, never merged: a changed-on-two-devices note shows up with both versions side by side.
 
 The core is Rust, shared by the CLI and a [Tauri 2](https://tauri.app) app with a Svelte frontend.
 
-**Status:** in development, for one person. M0 to M6 are built (core, remote, sync, registry, CLI, macOS app, Android
-app). Not signed, not released. Plan and milestones: the "Flint — Implementation Plan" doc.
+**Status:** in development, and **not independently audited** (see [SECURITY.md](SECURITY.md)). The
+core, sync, command line, and the macOS, Android and Windows apps are built; nothing is signed or released yet. What is
+built and what is left: [docs/roadmap.md](docs/roadmap.md).
 
 ## What you need
 
@@ -17,9 +18,15 @@ app). Not signed, not released. Plan and milestones: the "Flint — Implementati
 | the app | [bun](https://bun.sh), and the Tauri CLI: `cargo install tauri-cli --version "^2" --locked` |
 | the phone | JDK 17, Android SDK + NDK `30.0.14904198`, `adb`, a phone with USB debugging on |
 | the icons | `rsvg-convert` (`brew install librsvg`), only to regenerate them |
+| syncing | **S3-compatible storage**: a bucket, and an access key with read and write on it (see below) |
 
-An S3 bucket (AWS, Cloudflare R2, MinIO, ...) and an access key with read and write on it. One store is one bucket
-plus a folder (prefix) in it; several stores can share a bucket.
+**S3-compatible storage.** Flint syncs through any S3-compatible service, with your own bucket and key; nothing goes
+through a server of mine. One store is one bucket plus a folder (prefix) in it, and several stores can share a bucket.
+The service must support **conditional writes** (`If-Match` / `If-None-Match` on a PUT): that is how a second device's
+change is detected instead of silently overwriting. **Cloudflare R2** is what Flint is tested against, and its free
+tier is plenty for notes. AWS S3 supports conditional writes too, but I have not tried it. To check a service before
+trusting it with notes, run the contract tests against a scratch bucket with `scripts/s3-tests.sh`
+([`docs/s3-testing.md`](docs/s3-testing.md)); they exercise exactly the behaviour sync depends on.
 
 ## Run the app on the Mac
 
@@ -110,7 +117,10 @@ Nothing below the shells imports Tauri, so the whole stack, encryption included,
 
 ## Docs
 
+- [`docs/roadmap.md`](docs/roadmap.md): what is built and what is left
+- [`SECURITY.md`](SECURITY.md): what Flint protects and what it does not, and how to report a problem
 - [`docs/app.md`](docs/app.md): the desktop and Android apps, where things are stored
+- [`docs/windows.md`](docs/windows.md): the Windows build and what differs there
 - [`docs/cli.md`](docs/cli.md): the command line
 - [`docs/s3-testing.md`](docs/s3-testing.md), [`docs/sync-testing.md`](docs/sync-testing.md): how storage and sync are tested
 - [`docs/build-notes.md`](docs/build-notes.md): SQLCipher on Android
@@ -122,3 +132,7 @@ Each store has its own password. The password is stretched with Argon2id into a 
 kept in `.store/key.json`; every file's contents are encrypted with it (XChaCha20-Poly1305, the file's path
 authenticated), so S3 and a stolen device hold only ciphertext. File names and sizes are visible. Folders starting
 with `.` (such as `.git`) are never synced or encrypted. There is no password recovery.
+
+## License
+
+[MIT](LICENSE).
