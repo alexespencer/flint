@@ -7,7 +7,7 @@
     stores,
     ondone,
     oncancel,
-  }: { stores: StoreInfo[]; ondone: () => void; oncancel: () => void } = $props();
+  }: { stores: StoreInfo[]; ondone: (newStoreId: string) => void; oncancel: () => void } = $props();
   const hasStores = $derived(stores.length > 0);
 
   let mode = $state<"create" | "join">("create");
@@ -100,7 +100,7 @@
       await api.sync(id).catch(() => undefined); // problems show up in the app, with a retry
       s3Secret = password = repeat = "";
       reuseFrom = null;
-      ondone();
+      ondone(id);
     } catch (e) {
       error = errorMessage(e);
       if (errorKind(e) === "storeExists") mode = "join";

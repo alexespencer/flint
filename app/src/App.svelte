@@ -24,8 +24,10 @@
     loaded = true;
   }
 
-  async function added() {
+  /** A store was just created or joined: it becomes the one that is selected (the first one already is). */
+  async function added(id: string) {
     adding = false;
+    await api.switchStore(id).catch(() => undefined);
     await refresh();
   }
 
