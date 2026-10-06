@@ -120,6 +120,16 @@ impl<S: SecretStore> Registry<S> {
         self.save()
     }
 
+    /// Records whether the store's password is the empty one (see [`StoreRecord::passwordless`]).
+    pub fn set_passwordless(&mut self, id: &StoreId, passwordless: bool) -> Result<()> {
+        self.get(id)?;
+        if self.record_mut(id).passwordless != passwordless {
+            self.record_mut(id).passwordless = passwordless;
+            self.save()?;
+        }
+        Ok(())
+    }
+
     /// Points a store at its folder's new location (the folder was moved by hand).
     pub fn set_folder(&mut self, id: &StoreId, folder: impl Into<PathBuf>) -> Result<()> {
         let folder = folder.into();

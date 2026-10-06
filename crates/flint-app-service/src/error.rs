@@ -12,7 +12,7 @@ pub enum Error {
     #[error("that password is not right for this store")]
     WrongPassword,
 
-    #[error("the password cannot be empty")]
+    #[error("the new password cannot be empty")]
     EmptyPassword,
 
     #[error("this bucket and prefix already hold a store; join it instead of creating another")]

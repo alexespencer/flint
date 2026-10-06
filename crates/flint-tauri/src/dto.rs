@@ -20,6 +20,8 @@ pub struct StoreDto {
     pub folder: String,
     pub active: bool,
     pub unlocked: bool,
+    /// The store's password is empty: nothing to ask for. (Still encrypted, but with a key anyone can derive.)
+    pub passwordless: bool,
     pub files: usize,
     pub awaiting_encryption: Vec<String>,
     pub conflicts: Vec<ConflictDto>,
@@ -37,6 +39,7 @@ impl StoreDto {
             folder: status.folder.display().to_string(),
             active,
             unlocked: status.unlocked,
+            passwordless: record.passwordless,
             files: status.files,
             awaiting_encryption: status
                 .awaiting_encryption

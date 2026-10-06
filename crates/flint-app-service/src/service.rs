@@ -112,9 +112,6 @@ impl<S: SecretStore, C: Connect> AppService<S, C> {
     /// overwritten. The store is left unlocked. Does not sync; files already in the folder are
     /// encrypted and uploaded by the first [`sync`](Self::sync).
     pub async fn create_store(&mut self, new: NewStore) -> Result<StoreId> {
-        if new.password.is_empty() {
-            return Err(Error::EmptyPassword);
-        }
         let record = self.record_for(&new);
         let remote = self.connect.connect(&record.remote, &new.s3_secret)?;
         if remote.list().await?.iter().any(|e| is_key_file(&e.path)) {
@@ -168,9 +165,6 @@ impl<S: SecretStore, C: Connect> AppService<S, C> {
     /// bucket details and the password. Downloads the key file and checks the password against it; the
     /// notes themselves arrive with the first [`sync`](Self::sync). Leaves the store unlocked.
     pub async fn join_store(&mut self, new: NewStore) -> Result<StoreId> {
-        if new.password.is_empty() {
-            return Err(Error::EmptyPassword);
-        }
         let record = self.record_for(&new);
         let remote = self.connect.connect(&record.remote, &new.s3_secret)?;
         if !remote.list().await?.iter().any(|e| is_key_file(&e.path)) {
@@ -229,6 +223,21 @@ impl<S: SecretStore, C: Connect> AppService<S, C> {
         Ok(())
     }
 
+    /// [`unlock`](Self::unlock), and remembers whether this store's password is the empty one, so a shell
+    /// knows whether to ask for a password at all. A password that was changed on another device since is
+    /// noticed here: the empty password then no longer fits, and the store is marked as having one.
+    pub async fn unlock_noting(&mut self, id: &StoreId, password: &str) -> Result<()> {
+        let result = self.unlock(id, password).await;
+        match &result {
+            Ok(()) => self.registry.set_passwordless(id, password.is_empty())?,
+            Err(Error::WrongPassword) if password.is_empty() => {
+                self.registry.set_passwordless(id, false)?;
+            }
+            Err(_) => {}
+        }
+        result
+    }
+
     pub fn lock(&self, id: &StoreId) -> Result<()> {
         self.registry.get(id)?;
         Ok(self.registry.lock(id)?)
@@ -239,7 +248,20 @@ impl<S: SecretStore, C: Connect> AppService<S, C> {
         Ok(self.registry.lock_all()?)
     }
 
-    /// Changes the store's password. Syncs first, so the change is made to the newest key file, then
+    /// [`change_password`](Self::change_password), and records that the store now has a password.
+    pub async fn change_password_noting(
+        &mut self,
+        id: &StoreId,
+        old: &str,
+        new: &str,
+    ) -> Result<SyncReport> {
+        let report = self.change_password(id, old, new).await?;
+        self.registry.set_passwordless(id, false)?;
+        Ok(report)
+    }
+
+    /// Changes the store's password (the new one cannot be empty; a store made without a password can be given
+    /// one by passing `""` as the old one). Syncs first, so the change is made to the newest key file, then
     /// uploads the new one conditionally. If another device changed the password at the same moment,
     /// nothing is changed here ([`Error::PasswordChangedElsewhere`]). No file is re-encrypted, and other
     /// devices keep working: the data key is the same, and they pick up the new key file on their next
@@ -432,6 +454,9 @@ impl<S: SecretStore, C: Connect> AppService<S, C> {
             name: new.name.trim().to_owned(),
             folder: new.folder.clone(),
             remote: new.remote.clone(),
+            // an empty password given here either creates a store that has none, or, when joining, is checked
+            // against the key file before the store is added at all
+            passwordless: new.password.is_empty(),
         }
     }
 

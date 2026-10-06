@@ -555,6 +555,107 @@ async fn risky_moves_and_deletes_are_refused_and_change_nothing() {
 }
 
 #[tokio::test]
+async fn a_store_can_be_made_and_joined_without_a_password() {
+    let bucket = InMemoryConnect::new();
+    let mut mac = Device::new("Mac", &bucket);
+    mac.service.create_store(mac.new_store("")).await.unwrap();
+    assert!(mac.service.registry().list()[0].passwordless);
+    mac.service
+        .save_note(&mac.id(), &p("a.md"), "no secret here")
+        .unwrap();
+    mac.sync().await;
+
+    // still encrypted on disk and in the bucket: only the key is easy to derive
+    assert!(
+        !fs::read(mac.dir().join("a.md"))
+            .unwrap()
+            .windows(6)
+            .any(|w| w == b"secret")
+    );
+    let remote = bucket.connect(&settings(), "").unwrap();
+    for entry in remote
+        .list()
+        .await
+        .unwrap()
+        .into_iter()
+        .filter(|e| e.path.as_str() != ".store/key.json")
+    {
+        let bytes = remote.get(&entry.path).await.unwrap().bytes;
+        assert!(bytes.starts_with(b"FLNT"), "{}", entry.path);
+    }
+
+    // another device joins with only the bucket details: no password to give
+    let mut phone = Device::new("Phone", &bucket);
+    phone.service.join_store(phone.new_store("")).await.unwrap();
+    assert!(phone.service.registry().list()[0].passwordless);
+    phone.sync().await;
+    assert_eq!(phone.read("a.md"), "no secret here");
+
+    // locking and unlocking need nothing; any other password does not work
+    mac.service.lock_all().unwrap();
+    assert!(matches!(
+        mac.service.unlock(&mac.id(), "guess").await,
+        Err(Error::WrongPassword)
+    ));
+    let id = mac.id();
+    mac.service.unlock_noting(&id, "").await.unwrap();
+    assert!(mac.service.status(&id).unwrap().unlocked);
+}
+
+#[tokio::test]
+async fn the_empty_password_does_not_open_a_store_that_has_one_and_is_never_assumed() {
+    let (mac, _, bucket) = two_devices().await; // password "pw"
+    drop(mac);
+    let mut tablet = Device::new("Tablet", &bucket);
+    let joined = tablet.service.join_store(tablet.new_store("")).await;
+    assert!(matches!(joined, Err(Error::WrongPassword)), "{joined:?}");
+    assert!(tablet.service.registry().list().is_empty());
+}
+
+#[tokio::test]
+async fn a_store_without_a_password_can_be_given_one_and_other_devices_notice() {
+    let bucket = InMemoryConnect::new();
+    let mut mac = Device::new("Mac", &bucket);
+    mac.service.create_store(mac.new_store("")).await.unwrap();
+    let mut phone = Device::new("Phone", &bucket);
+    phone.service.join_store(phone.new_store("")).await.unwrap();
+    let (mid, pid) = (mac.id(), phone.id());
+
+    // the new password cannot be empty; the old one is the empty one
+    assert!(matches!(
+        mac.service.change_password_noting(&mid, "", "").await,
+        Err(Error::EmptyPassword)
+    ));
+    mac.service
+        .change_password_noting(&mid, "", "now protected")
+        .await
+        .unwrap();
+    assert!(!mac.service.registry().list()[0].passwordless);
+
+    // the phone learns it on its next sync, and then on the first unlock that fails with the empty password
+    phone.sync().await;
+    phone.service.lock_all().unwrap();
+    assert!(
+        phone.service.registry().list()[0].passwordless,
+        "stale until it tries"
+    );
+    assert!(matches!(
+        phone.service.unlock_noting(&pid, "").await,
+        Err(Error::WrongPassword)
+    ));
+    assert!(
+        !phone.service.registry().list()[0].passwordless,
+        "now it asks for a password"
+    );
+    phone
+        .service
+        .unlock_noting(&pid, "now protected")
+        .await
+        .unwrap();
+    assert!(!phone.service.registry().list()[0].passwordless);
+}
+
+#[tokio::test]
 async fn joining_needs_the_right_password_and_an_existing_store() {
     let bucket = InMemoryConnect::new();
 

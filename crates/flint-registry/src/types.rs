@@ -53,4 +53,9 @@ pub struct StoreRecord {
     /// The store's folder on this device.
     pub folder: PathBuf,
     pub remote: RemoteSettings,
+    /// This store's password is the empty one: its data is still encrypted, but with a key anyone can derive,
+    /// so shells need not ask for a password. Only a hint for the interface, kept per device; the key file is
+    /// the truth. Absent in lists written before it existed, which counts as `false`.
+    #[serde(default)]
+    pub passwordless: bool,
 }

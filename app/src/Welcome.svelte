@@ -56,9 +56,11 @@
     if (!prefixEdited) prefix = current.trim();
   });
 
+  // An empty password is allowed: the store is still encrypted, but with a key anyone can derive.
   const ready = $derived(
-    name.trim() && folder && bucket.trim() && accessKeyId.trim() && (s3Secret || reuseFrom) && password && (mode === "join" || password === repeat),
+    name.trim() && folder && bucket.trim() && accessKeyId.trim() && (s3Secret || reuseFrom) && (mode === "join" || password === repeat),
   );
+  const noPassword = $derived(mode === "create" && password === "" && repeat === "");
 
   async function choose() {
     const picked = await pickFolder();
@@ -155,13 +157,20 @@
       {/if}
     </fieldset>
     <label>
-      {mode === "create" ? "New password" : "Password"}
-      <input type="password" bind:value={password} required autocomplete="new-password" />
+      {mode === "create" ? "New password (optional)" : "Password (leave empty if the store has none)"}
+      <input type="password" bind:value={password} autocomplete="new-password" />
     </label>
     {#if mode === "create"}
-      <label>Repeat password <input type="password" bind:value={repeat} required autocomplete="new-password" /></label>
-      {#if repeat && repeat !== password}<p class="error">The passwords differ.</p>{/if}
-      <p class="dim">There is no way to recover a forgotten password: nobody, including Flint, can read your notes without it.</p>
+      <label>Repeat password <input type="password" bind:value={repeat} autocomplete="new-password" /></label>
+      {#if repeat !== password}<p class="error">The passwords differ.</p>{/if}
+      {#if noPassword}
+        <p class="warning">
+          <strong>No password set.</strong> Your notes are still encrypted, but with a key anyone can work out, so
+          whoever can read your bucket or this folder can read your notes. A password can be set later.
+        </p>
+      {:else}
+        <p class="dim">There is no way to recover a forgotten password: nobody, including Flint, can read your notes without it.</p>
+      {/if}
     {/if}
 
     {#if error}<p class="error">{error}</p>{/if}
@@ -231,5 +240,12 @@
   .row {
     display: flex;
     gap: 8px;
+  }
+  .warning {
+    border: 1px solid var(--danger);
+    border-radius: 8px;
+    padding: 8px 10px;
+    font-size: 13px;
+    color: var(--danger);
   }
 </style>

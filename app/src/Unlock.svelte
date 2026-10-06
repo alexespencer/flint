@@ -34,29 +34,50 @@
     error = "";
     biometric = { available: false, enabled: false };
     let stopWaiting = () => {};
+    if (store.passwordless) {
+      // nothing to ask for: open it at start-up, and after a lock wait to be told to
+      if (askAtOnce) stopWaiting = askWhenVisible(open);
+      return () => stopWaiting();
+    }
     api.biometricState(id).then((state) => {
       if (store.id !== id) return;
       biometric = state;
-      if (state.enabled && askAtOnce) stopWaiting = askWhenVisible(); // the password is still there as a fallback
+      if (state.enabled && askAtOnce) stopWaiting = askWhenVisible(fingerprint); // the password is still there as a fallback
       else input?.focus();
     }, () => input?.focus());
     return () => stopWaiting();
   });
+
+  /** A store without a password opens with the empty one. */
+  async function open() {
+    busy = true;
+    error = "";
+    try {
+      await api.unlock(store.id, "");
+      onunlocked();
+    } catch (e) {
+      // the password was set on another device since: a refresh shows the password field
+      error = errorKind(e) === "wrongPassword" ? "A password was set on another device. Enter it to unlock." : errorMessage(e);
+      onchange();
+    } finally {
+      busy = false;
+    }
+  }
 
   /**
    * Asks for the fingerprint, but only while the app is on screen. A phone locks the app as it goes to the
    * background, which shows this screen before the person is back; a prompt started then cannot appear.
    * Returns a function that stops waiting.
    */
-  function askWhenVisible(): () => void {
+  function askWhenVisible(ask: () => void): () => void {
     if (document.visibilityState === "visible") {
-      fingerprint();
+      ask();
       return () => {};
     }
     const onChange = () => {
       if (document.visibilityState !== "visible") return;
       document.removeEventListener("visibilitychange", onChange);
-      fingerprint();
+      ask();
     };
     document.addEventListener("visibilitychange", onChange);
     return () => document.removeEventListener("visibilitychange", onChange);
@@ -122,17 +143,25 @@
       <p class="name">{store.name}</p>
     {/if}
     <p class="dim">{store.folder}</p>
-    <input
-      type="password"
-      placeholder="Password"
-      autocomplete="current-password"
-      bind:value={password}
-      bind:this={input}
-      disabled={busy}
-    />
-    {#if error}<p class="error">{error}</p>{/if}
-    <button class="primary" disabled={busy || !password}>{busy ? "Unlocking…" : "Unlock"}</button>
-    {#if biometric.enabled}
+    {#if store.passwordless}
+      <p class="dim">This store has no password.</p>
+      {#if error}<p class="error">{error}</p>{/if}
+      <button type="button" class="primary" onclick={open} disabled={busy}>{busy ? "Opening…" : "Open"}</button>
+    {:else}
+      <input
+        type="password"
+        placeholder="Password"
+        autocomplete="current-password"
+        bind:value={password}
+        bind:this={input}
+        disabled={busy}
+      />
+      {#if error}<p class="error">{error}</p>{/if}
+      <button class="primary" disabled={busy || !password}>{busy ? "Unlocking…" : "Unlock"}</button>
+    {/if}
+    {#if store.passwordless}
+      <!-- nothing to protect with a fingerprint: it would only be asking for what nobody is keeping secret -->
+    {:else if biometric.enabled}
       <button type="button" onclick={fingerprint} disabled={busy}>Use {method}</button>
     {:else if biometric.available}
       <label class="check">

@@ -99,7 +99,7 @@ pub async fn unlock(
 ) -> Result<()> {
     let id = store_id(&id)?;
     worker
-        .call(move |svc| Box::pin(async move { svc.unlock(&id, &password).await }))
+        .call(move |svc| Box::pin(async move { svc.unlock_noting(&id, &password).await }))
         .await
         .map_err(Into::into)
 }
@@ -150,7 +150,11 @@ pub async fn change_password(
     let id = store_id(&id)?;
     worker
         .call(move |svc| {
-            Box::pin(async move { svc.change_password(&id, &old, &new).await.map(|_| ()) })
+            Box::pin(async move {
+                svc.change_password_noting(&id, &old, &new)
+                    .await
+                    .map(|_| ())
+            })
         })
         .await
         .map_err(Into::into)

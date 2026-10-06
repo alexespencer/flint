@@ -25,6 +25,7 @@ fn record(name: &str, folder: &str) -> StoreRecord {
         } else {
             folder.into()
         },
+        passwordless: false,
         remote: RemoteSettings {
             bucket: "bucket".into(),
             prefix: name.into(),
@@ -270,4 +271,29 @@ fn saved_keys_survive_a_lock_and_go_when_the_store_is_removed() {
             .unwrap()
             .is_none()
     );
+}
+
+#[test]
+fn the_passwordless_hint_is_kept_and_lists_without_it_still_load() {
+    let dir = TempDir::new().unwrap();
+    let secrets = Arc::new(MemorySecrets::new());
+    let mut registry = open(&dir, &secrets);
+    let work = record("Work", "/f/work");
+    registry.add(work.clone()).unwrap();
+    assert!(!registry.get(&work.id).unwrap().passwordless);
+    registry.set_passwordless(&work.id, true).unwrap();
+    assert!(
+        open(&dir, &secrets).get(&work.id).unwrap().passwordless,
+        "saved"
+    );
+    registry.set_passwordless(&work.id, false).unwrap();
+    assert!(!open(&dir, &secrets).get(&work.id).unwrap().passwordless);
+
+    // a list written before the field existed
+    let old = r#"{"format":1,"active":null,"stores":[{"id":"0123456789abcdef","name":"Old","folder":"/f/old",
+        "remote":{"bucket":"b","prefix":"","region":"auto","endpoint":null,"access_key_id":"k"}}]}"#;
+    let other = TempDir::new().unwrap();
+    std::fs::write(other.path().join("stores.json"), old).unwrap();
+    let registry = Registry::open(other.path(), MemorySecrets::new()).unwrap();
+    assert!(!registry.list()[0].passwordless);
 }

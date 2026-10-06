@@ -52,18 +52,26 @@ pub async fn run<S: SecretStore, C: Connect>(cli: Cli, env: &mut Env<'_, S, C>) 
     match cli.command {
         Command::CreateStore { name, remote } => {
             let s3_secret = env.input.secret("S3 secret access key")?;
-            let password = env.input.secret("New password")?;
+            let password = env.input.secret("New password (empty for none)")?;
             if env.input.secret("Repeat password")? != password {
                 return Err(Error::PasswordsDiffer);
             }
+            let none = password.is_empty();
             let new = new_store(&name, remote, s3_secret, password)?;
             let id = env.service.create_store(new).await?;
             writeln!(env.out, "created store {name:?}")?;
+            if none {
+                writeln!(
+                    env.out,
+                    "WARNING: no password is set. The notes are still encrypted, but with a key anyone can derive, so \
+                     whoever can read your bucket or this folder can read them. (`flint passwd` sets one.)"
+                )?;
+            }
             sync_and_print(env, &id).await
         }
         Command::Join { name, remote } => {
             let s3_secret = env.input.secret("S3 secret access key")?;
-            let password = env.input.secret("Password")?;
+            let password = env.input.secret("Password (empty if the store has none)")?;
             let new = new_store(&name, remote, s3_secret, password)?;
             let id = env.service.join_store(new).await?;
             writeln!(env.out, "joined store {name:?}")?;
@@ -95,8 +103,13 @@ pub async fn run<S: SecretStore, C: Connect>(cli: Cli, env: &mut Env<'_, S, C>) 
         }
         Command::Unlock => {
             let record = find(env, store)?;
-            let password = env.input.secret("Password")?;
-            env.service.unlock(&record.id, &password).await?;
+            // a store without a password has nothing to ask for
+            let password = if record.passwordless {
+                String::new()
+            } else {
+                env.input.secret("Password")?
+            };
+            env.service.unlock_noting(&record.id, &password).await?;
             writeln!(env.out, "{} is unlocked", record.name)?;
             Ok(())
         }
@@ -108,12 +121,19 @@ pub async fn run<S: SecretStore, C: Connect>(cli: Cli, env: &mut Env<'_, S, C>) 
         }
         Command::Passwd => {
             let record = find(env, store)?;
-            let old = env.input.secret("Current password")?;
+            let old = if record.passwordless {
+                String::new() // a store with no password is given one by passing the empty one as the old one
+            } else {
+                env.input.secret("Current password")?
+            };
             let new = env.input.secret("New password")?;
             if env.input.secret("Repeat new password")? != new {
                 return Err(Error::PasswordsDiffer);
             }
-            let report = env.service.change_password(&record.id, &old, &new).await?;
+            let report = env
+                .service
+                .change_password_noting(&record.id, &old, &new)
+                .await?;
             if report.failed.is_empty() {
                 writeln!(
                     env.out,

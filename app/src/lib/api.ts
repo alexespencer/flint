@@ -18,6 +18,8 @@ export interface StoreInfo {
   folder: string;
   active: boolean;
   unlocked: boolean;
+  /** The store's password is empty: nothing to ask for. (Still encrypted, but with a key anyone can derive.) */
+  passwordless: boolean;
   files: number;
   awaitingEncryption: string[];
   conflicts: Conflict[];

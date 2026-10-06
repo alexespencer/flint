@@ -53,3 +53,11 @@ scripts/android-run.sh --logs   # the same, then follow the app's log
   fingerprint for every use. Adding or removing a fingerprint invalidates it and the password is asked for again.
 - TLS trusts the bundled Mozilla roots (the system verifier needs a Java-side setup); desktop uses the system roots.
 - App backup is off (`allowBackup=false`), so `sync.db` and the index never go to Google Drive.
+
+## Stores without a password
+
+A store can be created, and joined, with the password left empty (a warning is shown). The data is still encrypted, but the
+key is derived from the empty string, so it is no secret: whoever can read the bucket or the folder can read the notes.
+It is for stores where convenience matters more than secrecy. Such a store has nothing to unlock with a password, Touch ID
+or a fingerprint (the unlock screen just shows **Open**). A password can be set later with `flint passwd` (the old
+password is the empty one); there is no screen for it yet, and no way back to an empty password.

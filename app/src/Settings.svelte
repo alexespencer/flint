@@ -80,7 +80,12 @@
 
     <section>
       <h3>{method === "Touch ID" ? "Touch ID" : "Fingerprint"} unlock for “{store.name}”</h3>
-      {#if biometric === null}
+      {#if store.passwordless}
+        <p class="dim">
+          “{store.name}” has no password, so there is nothing to unlock with {method}. Anyone who can read its bucket
+          or folder can read the notes.
+        </p>
+      {:else if biometric === null}
         <p class="dim">Checking…</p>
       {:else if !biometric.available}
         <p class="dim">Not available: this device has no {method} set up.</p>

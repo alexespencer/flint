@@ -165,6 +165,43 @@ async fn two_instances_share_a_store_surface_a_conflict_and_survive_a_password_c
 }
 
 #[tokio::test]
+async fn a_store_without_a_password_warns_once_then_needs_none() {
+    let bucket = InMemoryConnect::new();
+    let mut mac = Instance::new("Mac", &bucket);
+    let created = mac
+        .flint(
+            &format!("create-store Notes {}", mac.remote_flags()),
+            &["secret", "", ""], // no password, and no repeat of it
+        )
+        .await
+        .unwrap();
+    assert!(created.contains("WARNING: no password is set"), "{created}");
+
+    // no password is asked for when unlocking, or when joining from another device with a blank one
+    mac.flint("lock", &[]).await.unwrap();
+    let unlocked = mac.flint("unlock", &[]).await.unwrap(); // the script has no answers: any prompt would fail
+    assert!(unlocked.contains("is unlocked"), "{unlocked}");
+    let mut phone = Instance::new("Phone", &bucket);
+    phone
+        .flint(
+            &format!("join Notes {}", phone.remote_flags()),
+            &["secret", ""],
+        )
+        .await
+        .unwrap();
+
+    // a password can be set later: the old one is the empty one, and is not asked for
+    let changed = mac.flint("passwd", &["new", "new"]).await.unwrap();
+    assert!(changed.contains("password changed"), "{changed}");
+    mac.flint("lock", &[]).await.unwrap();
+    assert!(matches!(
+        mac.flint("unlock", &["wrong"]).await,
+        Err(Error::Service(ServiceError::WrongPassword))
+    ));
+    mac.flint("unlock", &["new"]).await.unwrap();
+}
+
+#[tokio::test]
 async fn mistakes_are_reported_plainly() {
     let bucket = InMemoryConnect::new();
     let mut mac = Instance::new("Mac", &bucket);
