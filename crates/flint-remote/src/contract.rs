@@ -238,7 +238,7 @@ macro_rules! remote_contract {
             async fn awkward_file_names_round_trip_exactly() {
                 let (backend, _guard) = $make.await;
                 let remote = backend.remote("store");
-                let names = [
+                let all_names = [
                     "a b.md",
                     "it's here.md",
                     "Ünïcode/日本語 note.md",
@@ -266,7 +266,17 @@ macro_rules! remote_contract {
                     "Esmerlada D'avenir.md",
                     "emoji 🧙.md",
                 ];
-                for name in names {
+                // The emulator keeps objects as files, and Windows cannot have a file called `colon:.md` (a real
+                // bucket can have any key), so on Windows those names are left to the other backends.
+                let names: Vec<&str> = all_names
+                    .into_iter()
+                    .filter(|name| {
+                        !(cfg!(windows)
+                            && backend.stores_names_as_files()
+                            && p(name).windows_problem().is_some())
+                    })
+                    .collect();
+                for name in names.iter().copied() {
                     let put = create(&remote, name, name.as_bytes()).await;
                     let got = remote.get(&p(name)).await.unwrap();
                     assert_eq!(got.bytes.as_ref(), name.as_bytes(), "{name}");

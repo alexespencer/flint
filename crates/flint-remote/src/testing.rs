@@ -80,6 +80,12 @@ impl S3sFs {
 pub(crate) trait Backend {
     type Remote: RemoteStore + 'static;
     fn remote(&self, prefix: &str) -> Self::Remote;
+
+    /// Whether objects are kept as files on this machine's disk (the S3 emulator does that), so a key can only
+    /// be used if the file system accepts it as a file name. Real S3 and the in-memory store have no such limit.
+    fn stores_names_as_files(&self) -> bool {
+        false
+    }
 }
 
 /// `object_store`'s in-memory backend: fast, and atomic.
@@ -102,6 +108,10 @@ impl Backend for S3sFs {
     type Remote = ObjectStoreRemote<AmazonS3>;
     fn remote(&self, prefix: &str) -> Self::Remote {
         ObjectStoreRemote::s3(&self.config(prefix)).unwrap()
+    }
+
+    fn stores_names_as_files(&self) -> bool {
+        true
     }
 }
 

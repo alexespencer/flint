@@ -91,12 +91,14 @@ pub fn find_plaintext(dir: &Path, needles: &[&str]) -> Vec<Finding> {
         };
         for needle in needles {
             if !needle.is_empty() && bytes.windows(needle.len()).any(|w| w == needle.as_bytes()) {
+                // spelled with `/` on every platform, like a store path, so callers can compare it as text
+                let relative = entry.path().strip_prefix(dir).unwrap_or(entry.path());
+                let slashed: Vec<_> = relative
+                    .components()
+                    .map(|c| c.as_os_str().to_string_lossy().into_owned())
+                    .collect();
                 found.push(Finding {
-                    path: entry
-                        .path()
-                        .strip_prefix(dir)
-                        .unwrap_or(entry.path())
-                        .to_owned(),
+                    path: PathBuf::from(slashed.join("/")),
                     needle: needle.to_string(),
                 });
             }
