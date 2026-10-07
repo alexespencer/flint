@@ -107,6 +107,8 @@ export const api = {
   createFolder: (id: string, path: string) => invoke<void>("create_folder", { id, path }),
   deletePath: (id: string, path: string) => invoke<number>("delete_path", { id, path }),
   movePath: (id: string, from: string, to: string) => invoke<number>("move_path", { id, from, to }),
+  /** The decrypted bytes of a file (an image, say). */
+  readFile: (id: string, path: string) => invoke<ArrayBuffer>("read_file", { id, path }),
   readNote: (id: string, path: string) => invoke<string>("read_note", { id, path }),
   saveNote: (id: string, path: string, text: string) => invoke<void>("save_note", { id, path, text }),
   search: (id: string, query: string) => invoke<Hit[]>("search", { id, query }),

@@ -1,5 +1,6 @@
 <script lang="ts">
   import FileTree from "./FileTree.svelte";
+  import { isImage } from "./lib/images";
   import { isConflictCopy, isNote, title, type TreeNode } from "./lib/tree";
 
   let {
@@ -52,9 +53,9 @@
           <button
             class="row"
             class:selected={selected === node.path}
-            class:attachment={!isNote(node.path)}
+            class:attachment={!isNote(node.path) && !isImage(node.path)}
             class:copy={isConflictCopy(node.path)}
-            disabled={!isNote(node.path)}
+            disabled={!isNote(node.path) && !isImage(node.path)}
             onclick={() => onopen(node.path)}
             title={node.path}
           >

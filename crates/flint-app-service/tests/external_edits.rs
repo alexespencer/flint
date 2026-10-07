@@ -20,6 +20,7 @@ const FAST: KdfParams = KdfParams {
 struct Dev {
     svc: AppService<MemorySecrets, InMemoryConnect>,
     dir: std::path::PathBuf,
+    bucket: InMemoryConnect,
     _t: (TempDir, TempDir),
 }
 
@@ -49,6 +50,7 @@ async fn fresh() -> (Dev, Dev) {
         Dev {
             svc,
             dir,
+            bucket: bucket.clone(),
             _t: (cfg, folder),
         }
     };
@@ -141,4 +143,70 @@ async fn a_damaged_encrypted_file_is_not_uploaded_and_the_other_device_keeps_the
             "{damage}: here the file stays as it is, and is reported on every sync"
         );
     }
+}
+
+/// A PNG's signature, then bytes that look like nothing in particular: stands in for a real image.
+fn fake_png() -> Vec<u8> {
+    let mut bytes = b"\x89PNG\r\n\x1a\n".to_vec();
+    bytes.extend((0..=255u8).cycle().take(5000));
+    bytes
+}
+
+#[tokio::test]
+async fn an_image_is_encrypted_on_disk_and_in_s3_and_comes_back_byte_for_byte() {
+    let (a, b) = fresh().await;
+    let image = fake_png();
+    fs::create_dir_all(a.dir.join("Images")).unwrap();
+    fs::write(a.dir.join("Images/Pasted image 1.png"), &image).unwrap(); // dropped into the folder
+    let outcome = a.svc.sync(&a.id()).await.unwrap();
+    assert_eq!(outcome.report.uploaded, [p("Images/Pasted image 1.png")]);
+
+    // the file on disk is no longer a PNG: it starts with Flint's header, and the picture's bytes are not in it
+    let on_disk = fs::read(a.dir.join("Images/Pasted image 1.png")).unwrap();
+    assert!(on_disk.starts_with(b"FLNT") && !on_disk.starts_with(b"\x89PNG"));
+    assert!(
+        !on_disk.windows(8).any(|w| w == &image[8..16]),
+        "no run of the image's bytes is readable"
+    );
+
+    // ... and so is what reached S3
+    let remote = flint_app_service::Connect::connect(
+        &a.bucket,
+        &flint_registry::RemoteSettings {
+            bucket: "b".into(),
+            prefix: "v".into(),
+            region: "auto".into(),
+            endpoint: None,
+            access_key_id: "k".into(),
+        },
+        "",
+    )
+    .unwrap();
+    use flint_remote::RemoteStore;
+    let stored = remote
+        .get(&p("Images/Pasted image 1.png"))
+        .await
+        .unwrap()
+        .bytes;
+    assert!(stored.starts_with(b"FLNT") && !stored.starts_with(b"\x89PNG"));
+    assert!(!stored.windows(8).any(|w| w == &image[8..16]));
+
+    // each device can read it back exactly, through the app
+    assert_eq!(
+        a.svc
+            .read_file(&a.id(), &p("Images/Pasted image 1.png"))
+            .unwrap(),
+        image
+    );
+    b.svc.sync(&b.id()).await.unwrap();
+    assert_eq!(
+        b.svc
+            .read_file(&b.id(), &p("Images/Pasted image 1.png"))
+            .unwrap(),
+        image
+    );
+    assert!(matches!(
+        b.svc.read_file(&b.id(), &p("Images/missing.png")),
+        Err(flint_app_service::Error::NothingAt(_))
+    ));
 }

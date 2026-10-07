@@ -306,6 +306,21 @@ pub async fn move_path(
         .map_err(Into::into)
 }
 
+/// The decrypted bytes of a file (an image, say), sent to the web view as raw binary, not as JSON numbers.
+#[tauri::command]
+pub async fn read_file(
+    worker: State<'_, Worker<Service>>,
+    id: String,
+    path: String,
+) -> std::result::Result<tauri::ipc::Response, CmdError> {
+    let (id, path) = (store_id(&id)?, self::path(&path)?);
+    worker
+        .call(move |svc| Box::pin(async move { svc.read_file(&id, &path) }))
+        .await
+        .map(tauri::ipc::Response::new)
+        .map_err(Into::into)
+}
+
 #[tauri::command]
 pub async fn read_note(
     worker: State<'_, Worker<Service>>,

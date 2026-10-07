@@ -5,6 +5,7 @@
   import { autoLockMinutes } from "./lib/settings";
   import { pieces } from "./lib/snippet";
   import { ago } from "./lib/time";
+  import { imageMime, isImage } from "./lib/images";
   import { baseName, buildTree, isNote, isWithin, moveTargets, parentOf, title, type TreeNode } from "./lib/tree";
   import ConflictView from "./ConflictView.svelte";
   import ContextMenu, { type MenuItem } from "./ContextMenu.svelte";
@@ -39,7 +40,8 @@
 
   let files = $state<string[]>([]);
   let expanded = $state(new Set<string>());
-  let current = $state<{ path: string; text: string } | null>(null);
+  /** The open note, or (with `image`) a picture being viewed: a URL the page can show. */
+  let current = $state<{ path: string; text: string; image?: string } | null>(null);
   let dirty = false;
   let saveState = $state<"saved" | "saving" | "unsaved" | "failed">("saved");
   let backlinks = $state<string[]>([]);
@@ -141,12 +143,46 @@
     saveTimer = setTimeout(flush, AUTOSAVE_MS);
   }
 
+  // ---- pictures: decrypted on demand, and shown from a URL that lives only in this window ----------------
+
+  const imageUrls = new Map<string, Promise<string>>();
+  const everyUrl = new Set<string>();
+
+  /** A URL for the picture at `path`, made once and kept. */
+  function imageUrl(path: string): Promise<string> {
+    let url = imageUrls.get(path);
+    if (!url) {
+      url = api.readFile(store.id, path).then((bytes) => {
+        const made = URL.createObjectURL(new Blob([bytes], { type: imageMime(path) ?? "application/octet-stream" }));
+        everyUrl.add(made);
+        return made;
+      });
+      url.catch(() => imageUrls.delete(path)); // a failed attempt can be tried again
+      imageUrls.set(path, url);
+    }
+    return url;
+  }
+
+  /** What the editor asks for to draw `![[name.png]]`: the picture's URL, or `null` if no such image exists. */
+  async function loadImage(target: string): Promise<string | null> {
+    if (!current) return null;
+    try {
+      const path = await api.resolveLink(store.id, current.path, target);
+      return path && isImage(path) ? await imageUrl(path) : null;
+    } catch {
+      return null;
+    }
+  }
+
   async function openNote(path: string) {
     if (current?.path === path) return;
     if (!(await flush())) return;
     try {
-      const text = await api.readNote(store.id, path);
-      current = { path, text };
+      if (isImage(path)) {
+        current = { path, text: "", image: await imageUrl(path) };
+      } else {
+        current = { path, text: await api.readNote(store.id, path) };
+      }
       pane = "note";
       showInfo = false;
       dirty = false;
@@ -178,6 +214,7 @@
     try {
       const path = await api.resolveLink(store.id, current.path, target);
       if (path) await openNote(path);
+      else if (isImage(target)) say(`Image not found: ${target}`, true); // a picture cannot be made here, so no "create it?"
       else if (confirm(`"${target}" does not exist yet. Create it?`)) await createNote(target);
     } catch (e) {
       say(errorMessage(e), true);
@@ -391,7 +428,15 @@
       const result = await api.sync(store.id);
       await loadFiles();
       onchange();
-      if (current && !dirty && files.includes(current.path)) {
+      if (result.downloaded > 0) imageUrls.clear(); // a picture may have changed on another device
+      if (current?.image) {
+        if (!files.includes(current.path)) {
+          current = null;
+          pane = "list";
+        } else if (result.downloaded > 0) {
+          current = { path: current.path, text: "", image: await imageUrl(current.path).catch(() => current?.image) };
+        }
+      } else if (current && !dirty && files.includes(current.path)) {
         // another device may have changed the open note
         const fresh = await api.readNote(store.id, current.path).catch(() => null);
         if (fresh !== null && fresh !== current.text && !dirty) current = { path: current.path, text: fresh };
@@ -456,7 +501,7 @@
     conflictOpen = null;
     await loadFiles();
     onchange();
-    if (current) {
+    if (current && !current.image) {
       const fresh = await api.readNote(store.id, current.path).catch(() => null);
       if (fresh !== null) current = { path: current.path, text: fresh };
     }
@@ -505,6 +550,7 @@
     clearTimeout(saveTimer);
     clearTimeout(syncTimer);
     clearTimeout(searchTimer);
+    everyUrl.forEach((url) => URL.revokeObjectURL(url));
   });
 </script>
 
@@ -589,7 +635,7 @@
         {/if}
         <span class="title">{title(current.path)}</span>
         <span class="dim path">{current.path}</span>
-        <span class="save dim" class:error={saveState === "failed"}>
+        <span class="save dim" class:error={saveState === "failed"} class:hidden={!!current.image}>
           {saveState === "saved" ? "" : saveState === "saving" ? "Saving…" : saveState === "unsaved" ? "Editing…" : "Not saved"}
         </span>
         {#if narrow}
@@ -600,7 +646,13 @@
       </div>
       {#key current.path}
         <div class="editor-host">
-          <Editor text={current.text} onchange={edited} onopenlink={openLink} />
+          {#if current.image}
+            <div class="viewer">
+              <img src={current.image} alt={title(current.path)} />
+            </div>
+          {:else}
+            <Editor text={current.text} onchange={edited} onopenlink={openLink} {loadImage} />
+          {/if}
         </div>
       {/key}
     {:else}
@@ -893,6 +945,23 @@
   }
   .save {
     font-size: 12px;
+  }
+  .viewer {
+    height: 100%;
+    overflow: auto;
+    display: grid;
+    place-items: center;
+    padding: 18px;
+    background: var(--bg-side);
+  }
+  .viewer img {
+    max-width: 100%;
+    max-height: 100%;
+    object-fit: contain;
+    border-radius: 6px;
+  }
+  .hidden {
+    visibility: hidden;
   }
   .editor-host {
     flex: 1;

@@ -392,6 +392,17 @@ impl<S: SecretStore, C: Connect> AppService<S, C> {
         Ok(String::from_utf8_lossy(&fs.read(path)?).into_owned())
     }
 
+    /// The decrypted bytes of any file in the store: a note, or an attachment such as an image. Attachments are
+    /// encrypted on disk and in S3 exactly as notes are, so this is the only way to see one.
+    pub fn read_file(&self, id: &StoreId, path: &StorePath) -> Result<Vec<u8>> {
+        let (record, keys) = self.unlocked(id)?;
+        let fs = EncryptedFs::new(DiskFs::new(&record.folder), keys);
+        if !fs.exists(path)? {
+            return Err(Error::NothingAt(path.clone()));
+        }
+        Ok(fs.read(path)?)
+    }
+
     /// Writes a note (encrypted, atomically) and updates the index.
     pub fn save_note(&self, id: &StoreId, path: &StorePath, text: &str) -> Result<()> {
         let (record, keys) = self.unlocked(id)?;

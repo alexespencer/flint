@@ -14,6 +14,7 @@
   import { markdown, markdownLanguage } from "@codemirror/lang-markdown";
   import { HighlightStyle, indentUnit, syntaxHighlighting, syntaxTree } from "@codemirror/language";
   import { tags } from "@lezer/highlight";
+  import { isImage, parseEmbed } from "./lib/images";
   import { wikilinkAt } from "./lib/wikilink";
 
   let {
@@ -21,11 +22,14 @@
     readonly = false,
     onchange,
     onopenlink,
+    loadImage,
   }: {
     text: string;
     readonly?: boolean;
     onchange?: (text: string) => void;
     onopenlink?: (target: string) => void;
+    /** Where to get the picture an embed names: a URL the page can show, or `null` if there is no such image. */
+    loadImage?: (target: string) => Promise<string | null>;
   } = $props();
 
   let host: HTMLDivElement | undefined = $state();
@@ -46,6 +50,52 @@
     });
   });
 
+  /** A picture shown in place of `![[name.png]]` or `![alt](name.png)`. Clicking it opens it full size. */
+  class ImageWidget extends WidgetType {
+    target: string;
+    width: number | null;
+    alt: string;
+    constructor(target: string, width: number | null, alt: string) {
+      super();
+      this.target = target;
+      this.width = width;
+      this.alt = alt;
+    }
+    eq(other: ImageWidget) {
+      return other.target === this.target && other.width === this.width && other.alt === this.alt;
+    }
+    toDOM() {
+      const holder = document.createElement("span");
+      holder.className = "cm-embed-image cm-embed-loading";
+      const image = document.createElement("img");
+      image.alt = this.alt || this.target;
+      if (this.width) image.style.width = `${this.width}px`;
+      holder.append(image);
+      holder.addEventListener("mousedown", (event) => event.preventDefault());
+      holder.addEventListener("click", () => onopenlink?.(this.target));
+      const failed = () => {
+        holder.className = "cm-embed-image cm-embed-missing";
+        holder.textContent = `Image not found: ${this.target}`;
+      };
+      if (!loadImage) failed();
+      else {
+        loadImage(this.target).then(
+          (url) => {
+            if (!url) return failed();
+            image.onload = () => holder.classList.remove("cm-embed-loading");
+            image.onerror = failed;
+            image.src = url;
+          },
+          failed,
+        );
+      }
+      return holder;
+    }
+    ignoreEvent() {
+      return true;
+    }
+  }
+
   const hidden = Decoration.replace({});
   const editingLink = Decoration.mark({ class: "cm-wikilink" });
   const renderedLink = Decoration.mark({ class: "cm-wikilink cm-wikilink-rendered" });
@@ -65,6 +115,13 @@
           builder.add(start, end, editingLink);
           continue;
         }
+        if (m[0].startsWith("!")) {
+          const embed = parseEmbed(m[1]);
+          if (isImage(embed.target)) {
+            builder.add(start, end, Decoration.replace({ widget: new ImageWidget(embed.target, embed.width, embed.alt) }));
+            continue;
+          }
+        }
         const open = start + (m[0].startsWith("!") ? 3 : 2);
         const bar = m[1].indexOf("|");
         builder.add(start, bar >= 0 ? open + bar + 1 : open, hidden);
@@ -74,6 +131,51 @@
     }
     return builder.finish();
   }
+
+  /** `![alt](picture.png)`: the markdown parser finds the image and its address; only pictures inside the store are shown. */
+  function markdownImageDecorations(view: EditorView): DecorationSet {
+    const builder = new RangeSetBuilder<Decoration>();
+    const selection = view.state.selection.ranges;
+    for (const { from, to } of view.visibleRanges) {
+      syntaxTree(view.state).iterate({
+        from,
+        to,
+        enter(node) {
+          if (node.name !== "Image") return;
+          const url = node.node.getChild("URL");
+          if (!url || selection.some((r) => r.to >= node.from && r.from <= node.to)) return;
+          const address = view.state.sliceDoc(url.from, url.to).trim();
+          if (/^[a-z][a-z0-9+.-]*:/i.test(address)) return; // http:, data: ... are not loaded (nothing leaves the device)
+          let target = address;
+          try {
+            target = decodeURIComponent(address);
+          } catch {
+            // not valid percent-encoding: use it as written
+          }
+          if (!isImage(target)) return;
+          const marks = node.node.getChildren("LinkMark"); // `![`, `]`, `(`, `)`
+          const alt = marks.length >= 2 ? view.state.sliceDoc(marks[0].to, marks[1].from) : "";
+          builder.add(node.from, node.to, Decoration.replace({ widget: new ImageWidget(target, null, alt) }));
+        },
+      });
+    }
+    return builder.finish();
+  }
+
+  const imagePlugin = ViewPlugin.fromClass(
+    class {
+      decorations: DecorationSet;
+      constructor(view: EditorView) {
+        this.decorations = markdownImageDecorations(view);
+      }
+      update(update: ViewUpdate) {
+        if (update.docChanged || update.selectionSet || update.viewportChanged || syntaxTree(update.state) !== syntaxTree(update.startState)) {
+          this.decorations = markdownImageDecorations(update.view);
+        }
+      }
+    },
+    { decorations: (plugin) => plugin.decorations },
+  );
 
   const wikilinkPlugin = ViewPlugin.fromClass(
     class {
@@ -225,6 +327,7 @@
           taskPlugin,
           syntaxHighlighting(highlight),
           wikilinkPlugin,
+          imagePlugin,
           EditorView.lineWrapping,
           EditorState.readOnly.of(readonly),
           EditorView.updateListener.of((u) => {
@@ -294,6 +397,30 @@
   .editor :global(.cm-wikilink),
   .editor :global(.cm-wikilink *) {
     color: var(--accent) !important;
+  }
+  .editor :global(.cm-embed-image) {
+    display: inline-block;
+    max-width: 100%;
+    cursor: zoom-in;
+    vertical-align: top;
+  }
+  .editor :global(.cm-embed-image img) {
+    display: block;
+    max-width: 100%;
+    max-height: 70vh;
+    height: auto;
+    border-radius: 6px;
+  }
+  .editor :global(.cm-embed-loading) {
+    min-width: 120px;
+    min-height: 60px;
+    background: var(--bg-side);
+    border-radius: 6px;
+  }
+  .editor :global(.cm-embed-missing) {
+    cursor: default;
+    color: var(--danger);
+    font-size: 13px;
   }
   .editor :global(.cm-task-checkbox) {
     width: 1.05em;
