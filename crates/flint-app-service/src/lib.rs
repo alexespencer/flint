@@ -13,9 +13,11 @@ mod indexing;
 mod manage;
 mod remove;
 mod service;
+mod settings;
 
 pub use connect::{Connect, InMemoryConnect, S3Connect};
 pub use error::{Error, Result};
 pub use indexing::IndexStats;
 pub use remove::Removed;
 pub use service::{AppService, ConflictInfo, NewStore, Status, SyncOutcome};
+pub use settings::{SettingsChange, SettingsSync, SettingsView};

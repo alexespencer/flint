@@ -5,7 +5,9 @@ use flint_core::StorePath;
 use flint_registry::StoreId;
 use tauri::State;
 
-use crate::dto::{BacklinkDto, CmdError, FolderDto, HitDto, NewStoreArgs, StoreDto, SyncDto};
+use crate::dto::{
+    BacklinkDto, CmdError, FolderDto, HitDto, NewStoreArgs, SettingsDto, StoreDto, SyncDto,
+};
 use crate::{Service, Worker};
 
 type Result<T> = std::result::Result<T, CmdError>;
@@ -363,6 +365,43 @@ fn percent_decode(text: &str) -> Result<String> {
         .decode_utf8()
         .map(|decoded| decoded.into_owned())
         .map_err(|_| CmdError::other("a path was not valid text"))
+}
+
+/// The store's shared settings (where pasted pictures and new notes go), with defaults filled in.
+#[tauri::command]
+pub async fn get_settings(worker: State<'_, Worker<Service>>, id: String) -> Result<SettingsDto> {
+    let id = store_id(&id)?;
+    worker
+        .call(move |svc| Box::pin(async move { svc.settings(&id).map(SettingsDto::from) }))
+        .await
+        .map_err(Into::into)
+}
+
+/// Changes settings on this device (the next sync shares them); only the ones given. A folder that cannot be used is
+/// refused, and nothing is changed.
+#[tauri::command]
+pub async fn set_settings(
+    worker: State<'_, Worker<Service>>,
+    id: String,
+    attachment_folder: Option<String>,
+    new_note_folder: Option<String>,
+) -> Result<SettingsDto> {
+    let id = store_id(&id)?;
+    worker
+        .call(move |svc| {
+            Box::pin(async move {
+                svc.set_settings(
+                    &id,
+                    flint_app_service::SettingsChange {
+                        attachment_folder,
+                        new_note_folder,
+                    },
+                )
+                .map(SettingsDto::from)
+            })
+        })
+        .await
+        .map_err(Into::into)
 }
 
 #[tauri::command]

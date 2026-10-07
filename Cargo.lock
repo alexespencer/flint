@@ -1262,11 +1262,14 @@ dependencies = [
  "flint-index",
  "flint-registry",
  "flint-remote",
+ "flint-settings",
  "flint-store-fs",
  "flint-sync",
  "flint-sync-state",
  "flint-testkit",
  "object_store",
+ "serde",
+ "serde_json",
  "tempfile",
  "thiserror 2.0.21",
  "time",
@@ -1387,6 +1390,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "flint-settings"
+version = "0.0.0"
+dependencies = [
+ "flint-core",
+ "proptest",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.21",
+]
+
+[[package]]
 name = "flint-store-fs"
 version = "0.0.0"
 dependencies = [
@@ -1439,6 +1453,7 @@ dependencies = [
  "flint-crypto",
  "flint-index",
  "flint-registry",
+ "flint-settings",
  "flint-store-fs",
  "flint-sync",
  "futures",

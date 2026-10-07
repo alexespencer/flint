@@ -1,6 +1,6 @@
 <script lang="ts">
   import { onDestroy, onMount } from "svelte";
-  import { api, errorKind, errorMessage, isAndroid, summarise, type FolderInfo, type Hit, type StoreInfo } from "./lib/api";
+  import { api, errorKind, errorMessage, isAndroid, summarise, type FolderInfo, type Hit, type SettingsInfo, type StoreInfo } from "./lib/api";
   import { backLayer } from "./lib/layers";
   import { autoLockMinutes } from "./lib/settings";
   import { pieces } from "./lib/snippet";
@@ -221,12 +221,20 @@
     }
   }
 
-  /** Where a pasted or dropped picture is saved. (To become a setting.) */
-  const PICTURE_FOLDER = "Images";
+  /** The store's shared settings (where pictures and new notes go). Read at start, and again when a sync brings newer ones. */
+  let settings = $state<SettingsInfo>({ attachmentFolder: "Images", newNoteFolder: "", newerVersion: null });
 
-  /** Saves pictures pasted or dropped into the open note, in the pictures folder, and returns the links to insert. */
+  async function loadSettings() {
+    try {
+      settings = await api.getSettings(store.id);
+    } catch {
+      // the defaults above stay in use
+    }
+  }
+
+  /** Saves pictures pasted or dropped into the open note, in the pictures folder from Settings, and returns the links to insert. */
   async function pasteImages(files: File[], dropped: boolean): Promise<string> {
-    const folder = PICTURE_FOLDER;
+    const folder = settings.attachmentFolder;
     const embeds: string[] = [];
     for (const file of files) {
       // a pasted screenshot has no real name; a dropped file keeps the one it has
@@ -250,8 +258,10 @@
   }
 
   async function createNote(name: string) {
-    const clean = name.trim().replace(/^\/+/, "");
+    let clean = name.trim().replace(/^\/+/, "");
     if (!clean) return;
+    // a name with no folder in it goes in the folder chosen in Settings
+    if (settings.newNoteFolder && !clean.includes("/")) clean = `${settings.newNoteFolder}/${clean}`;
     const path = isNote(clean) || clean.includes(".") ? clean : `${clean}.md`;
     if (!(await flush())) return;
     try {
@@ -291,8 +301,10 @@
   /** Starts typing the name of a new note or folder, inside `parent` when given. */
   function startCreating(kind: "note" | "folder", parent = "") {
     creating = kind;
-    newName = parent ? `${parent}/` : "";
-    if (parent) expanded = new Set(expanded).add(parent);
+    // a new note starts in the folder chosen in Settings (change the prefix to put it elsewhere)
+    const folder = parent || (kind === "note" ? settings.newNoteFolder : "");
+    newName = folder ? `${folder}/` : "";
+    if (folder) expanded = new Set(expanded).add(folder);
   }
 
   // ---- the actions on a file or folder ----------------------------------------------------------
@@ -456,6 +468,7 @@
       const result = await api.sync(store.id);
       await loadFiles();
       onchange();
+      if (result.settingsChanged) await loadSettings();
       if (result.downloaded > 0) imageUrls.clear(); // a picture may have changed on another device
       if (current?.image) {
         if (!files.includes(current.path)) {
@@ -555,6 +568,7 @@
 
   let timers: ReturnType<typeof setInterval>[] = [];
   onMount(async () => {
+    loadSettings();
     const narrowScreen = window.matchMedia("(max-width: 720px)");
     narrow = narrowScreen.matches;
     narrowScreen.addEventListener("change", (e) => (narrow = e.matches));
@@ -767,7 +781,17 @@
 {/if}
 
 {#if showSettings}
-  <Settings {store} {stores} onclose={() => (showSettings = false)} onchange={onchange} />
+  <Settings
+    {store}
+    {stores}
+    {settings}
+    onclose={() => (showSettings = false)}
+    onchange={onchange}
+    onsettings={(changed) => {
+      settings = changed;
+      markUnsynced(); // sync soon, so the other devices get them
+    }}
+  />
 {/if}
 
 {#if conflictOpen}

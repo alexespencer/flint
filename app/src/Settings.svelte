@@ -1,6 +1,7 @@
 <script lang="ts">
+  import { untrack } from "svelte";
   import PathDialog from "./PathDialog.svelte";
-  import { api, errorMessage, isAndroid, type BiometricState, type StoreInfo } from "./lib/api";
+  import { api, errorMessage, isAndroid, type BiometricState, type SettingsInfo, type StoreInfo } from "./lib/api";
   import { removeStoreFlow } from "./lib/storeActions";
   import { backLayer } from "./lib/layers";
   import { AUTO_LOCK_CHOICES, autoLockMinutes, setAutoLockMinutes } from "./lib/settings";
@@ -8,15 +9,52 @@
   let {
     store,
     stores,
+    settings,
     onclose,
     onchange,
-  }: { store: StoreInfo; stores: StoreInfo[]; onclose: () => void; onchange: () => void } = $props();
+    onsettings,
+  }: {
+    store: StoreInfo;
+    stores: StoreInfo[];
+    /** The store's shared settings as they stand. */
+    settings: SettingsInfo;
+    onclose: () => void;
+    onchange: () => void;
+    /** Settings were changed here: the new ones. */
+    onsettings: (changed: SettingsInfo) => void;
+  } = $props();
 
   $effect(() => backLayer(() => onclose())); // not tracked: the effect runs once, when the layer opens
 
   const method = isAndroid ? "fingerprint" : "Touch ID";
 
+  /** Which group of settings is showing: this store's, the app's (this device), or the list of stores. */
+  let tab = $state<"store" | "app" | "stores">("store");
   let minutes = $state(autoLockMinutes());
+  // what is typed in the two folder boxes: starts as the current settings, and is saved when a box is left
+  let attachmentFolder = $state(untrack(() => settings.attachmentFolder));
+  let newNoteFolder = $state(untrack(() => settings.newNoteFolder));
+  let knownFolders = $state<string[]>([]);
+  let folderProblem = $state("");
+
+  $effect(() => {
+    api.folders(store.id).then((list) => (knownFolders = list.map((f) => f.path)), () => (knownFolders = []));
+  });
+
+  /** Saves the folder settings (the store tidies them and refuses an unusable one); the boxes show what was kept. */
+  async function saveFolders() {
+    folderProblem = "";
+    try {
+      const saved = await api.setSettings(store.id, { attachmentFolder, newNoteFolder });
+      attachmentFolder = saved.attachmentFolder;
+      newNoteFolder = saved.newNoteFolder;
+      onsettings(saved);
+    } catch (e) {
+      folderProblem = errorMessage(e);
+      attachmentFolder = settings.attachmentFolder;
+      newNoteFolder = settings.newNoteFolder;
+    }
+  }
   let biometric = $state<BiometricState | null>(null);
   let busy = $state(false);
   let error = $state("");
@@ -82,66 +120,78 @@
       <button onclick={onclose}>Done</button>
     </header>
 
-    <section>
-      <h3>Locking</h3>
-      <label class="row">
-        <span>Lock all stores after being idle for</span>
-        <select value={minutes} onchange={(e) => chooseMinutes(Number(e.currentTarget.value))}>
-          {#each AUTO_LOCK_CHOICES as choice (choice.minutes)}
-            <option value={choice.minutes}>{choice.label}</option>
-          {/each}
-        </select>
-      </label>
-      <p class="dim">
-        {isAndroid ? "The app also locks as soon as you leave it. " : ""}This is kept on this device only.
-      </p>
-    </section>
+    <div class="tabs" role="tablist">
+      <button role="tab" aria-selected={tab === "store"} class:on={tab === "store"} onclick={() => (tab = "store")}>Store</button>
+      <button role="tab" aria-selected={tab === "app"} class:on={tab === "app"} onclick={() => (tab = "app")}>App</button>
+      <button role="tab" aria-selected={tab === "stores"} class:on={tab === "stores"} onclick={() => (tab = "stores")}>Stores ({stores.length})</button>
+    </div>
 
-    <section>
-      <h3>{method === "Touch ID" ? "Touch ID" : "Fingerprint"} unlock for “{store.name}”</h3>
-      {#if store.passwordless}
-        <p class="dim">
-          “{store.name}” has no password, so there is nothing to unlock with {method}. Anyone who can read its bucket
-          or folder can read the notes.
-        </p>
-      {:else if biometric === null}
-        <p class="dim">Checking…</p>
-      {:else if !biometric.available}
-        <p class="dim">Not available: this device has no {method} set up.</p>
-      {:else}
-        <div class="row">
-          <span>{biometric.enabled ? `On: unlock with ${method} instead of the password.` : `Off: unlock with the password.`}</span>
-          <button onclick={toggleBiometric} disabled={busy}>{biometric.enabled ? "Turn off" : "Turn on"}</button>
-        </div>
-        {#if !isAndroid}
-          <p class="dim">One Touch ID unlocks every store that has it turned on.</p>
+    <div class="body">
+      {#if tab === "store"}
+        <p class="which dim">Settings for “{store.name}” <span class="note">· synced to all your devices</span></p>
+        {#if settings.newerVersion !== null}
+          <p class="error">These come from a newer version of Flint, so they cannot be changed here. Update Flint on this device.</p>
         {/if}
-      {/if}
-    </section>
+        <label class="row">
+          <span>New notes go in</span>
+          <input list="known-folders" bind:value={newNoteFolder} onchange={saveFolders} placeholder="(top level)" disabled={settings.newerVersion !== null} />
+        </label>
+        <label class="row">
+          <span>Pasted pictures go in</span>
+          <input list="known-folders" bind:value={attachmentFolder} onchange={saveFolders} placeholder="(top level)" disabled={settings.newerVersion !== null} />
+        </label>
+        <datalist id="known-folders">
+          {#each knownFolders as folder (folder)}<option value={folder}></option>{/each}
+        </datalist>
+        {#if folderProblem}<p class="error">{folderProblem}</p>{/if}
 
-    <section class="stores">
-      <h3>Stores on this device ({stores.length})</h3>
-      <ul>
-        {#each stores as s (s.id)}
-          <li>
-            <div class="info">
-              <strong>{s.name}</strong>
-              <span class="dim" title={s.endpoint ?? s.bucket}>
-                {s.bucket}{s.endpoint ? ` · ${s.endpoint.replace(/^https?:\/\//, "")}` : ""}
+        <p class="group dim spaced">This device only</p>
+        <div class="row" title={isAndroid ? "" : "One Touch ID unlocks every store that has it turned on."}>
+          <span>Unlock with {method}</span>
+          {#if store.passwordless}
+            <span class="dim">No password</span>
+          {:else if biometric === null}
+            <span class="dim">…</span>
+          {:else if !biometric.available}
+            <span class="dim">Not set up on this device</span>
+          {:else}
+            <button onclick={toggleBiometric} disabled={busy}>{biometric.enabled ? "On: turn off" : "Off: turn on"}</button>
+          {/if}
+        </div>
+      {:else if tab === "app"}
+        <p class="which dim">Applies to this device only</p>
+        <label class="row">
+          <span>Lock after being idle for</span>
+          <select value={minutes} onchange={(e) => chooseMinutes(Number(e.currentTarget.value))}>
+            {#each AUTO_LOCK_CHOICES as choice (choice.minutes)}
+              <option value={choice.minutes}>{choice.label}</option>
+            {/each}
+          </select>
+        </label>
+        {#if isAndroid}<p class="dim small">The app also locks as soon as you leave it.</p>{/if}
+      {:else}
+        <ul class="stores">
+          {#each stores as s (s.id)}
+            <li>
+              <div class="info">
+                <strong>{s.name}</strong>
+                <span class="dim" title={s.endpoint ?? s.bucket}>
+                  {s.bucket}{s.endpoint ? ` · ${s.endpoint.replace(/^https?:\/\//, "")}` : ""}
+                </span>
+                {#if !isAndroid}<span class="dim" title={s.folder}>{s.folder}</span>{/if}
+              </div>
+              <span class="actions">
+                <button onclick={() => remove(s)} title="Take it off this device; it stays on S3">Remove</button>
+                <button class="danger" onclick={() => (deleting = s)} title="Delete it from S3, for every device">Delete…</button>
               </span>
-              {#if !isAndroid}<span class="dim" title={s.folder}>{s.folder}</span>{/if}
-            </div>
-            <span class="actions">
-              <button onclick={() => remove(s)} title="Take it off this device; it stays on S3">Remove</button>
-              <button class="danger" onclick={() => (deleting = s)} title="Delete it from S3, for every device">Delete…</button>
-            </span>
-          </li>
-        {/each}
-      </ul>
-    </section>
+            </li>
+          {/each}
+        </ul>
+      {/if}
 
-    {#if notice}<p class="pad notice">{notice}</p>{/if}
-    {#if error}<p class="error pad">{error}</p>{/if}
+      {#if notice}<p class="pad notice">{notice}</p>{/if}
+      {#if error}<p class="error pad">{error}</p>{/if}
+    </div>
   </div>
 </div>
 
@@ -178,26 +228,70 @@
     flex-direction: column;
     overflow-y: auto; /* only if even the fixed parts do not fit */
   }
-  /* The stores list takes whatever height is left and scrolls inside, so the rest of the dialog stays put. */
-  .stores {
-    display: flex;
-    flex-direction: column;
-    min-height: 0;
-    flex: 0 1 auto;
+  header {
+    flex: none;
   }
-  /* Two and a half rows are visible, so the half row hints that the list scrolls. Rows are a fixed height
-     (long lines are cut short) so that "two and a half" stays true. */
-  .stores ul {
-    max-height: calc(var(--row) * 2.5);
-    min-height: 0;
+  /* Rows are a fixed height (long lines are cut short), and four and a half show, so the half row hints that the list scrolls. */
+  ul.stores {
+    --row: 4.5rem;
+    max-height: calc(var(--row) * 4.5);
     overflow-y: auto;
     border-bottom: 1px solid var(--border);
-    --row: 4.5rem;
   }
-  header,
-  section:not(.stores),
-  .pad {
+  .tabs {
+    display: flex;
+    gap: 4px;
+    padding: 2px;
+    margin: 6px 0 12px;
+    background: var(--bg-side);
+    border-radius: 8px;
     flex: none;
+  }
+  .tabs button {
+    flex: 1;
+    background: none;
+    border-color: transparent;
+    padding: 4px 8px;
+  }
+  .tabs button.on {
+    background: var(--bg);
+    border-color: var(--border);
+    font-weight: 600;
+  }
+  /* the same height whichever tab shows, so the dialog does not jump */
+  .body {
+    min-height: 15rem;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+  }
+  .body p {
+    margin: 0;
+  }
+  .which {
+    font-size: 12px;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+  }
+  .which .note {
+    text-transform: none;
+    letter-spacing: 0;
+    font-size: 12px;
+    opacity: 0.85;
+  }
+  .group {
+    font-size: 12px;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+  }
+  .small {
+    font-size: 12px;
+  }
+  /* a faint line before "This device only", to set it apart from the synced settings above it */
+  .spaced {
+    margin-top: 10px;
+    padding-top: 14px;
+    border-top: 1px solid var(--border);
   }
   header {
     display: flex;
@@ -207,16 +301,6 @@
   h2 {
     font-size: 18px;
   }
-  h3 {
-    margin: 18px 0 8px;
-    font-size: 12px;
-    text-transform: uppercase;
-    letter-spacing: 0.06em;
-    color: var(--fg-dim);
-  }
-  p {
-    margin: 6px 0 0;
-  }
   .row {
     display: flex;
     justify-content: space-between;
@@ -225,6 +309,10 @@
   }
   .row select {
     width: auto;
+  }
+  .row input {
+    width: 55%;
+    flex: none;
   }
   ul {
     list-style: none;

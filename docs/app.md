@@ -58,3 +58,14 @@ A store can be created, and joined, with the password left empty (a warning is s
 - **Remove** (Settings → Stores, or "Remove this store" on the unlock screen) takes a store off this device. It stays on S3, so joining again brings it back; the folder is renamed to `<name>.removed-<date>-<time>` and kept. The store is synced first; if that cannot be done, or something would be left only on this device, the reason is shown and you can remove it anyway (nothing is lost, the folder is kept).
 - **Delete…** (Settings → Stores) deletes the store's files from S3 for every device, after you type its name. Other devices stop syncing it and keep their notes until you remove it there.
 - If the store has disappeared from S3 (deleted in a console, bucket emptied), sync **stops without changing anything** on the device, and the app offers to **put this device's copy back** or to remove the store from this device. Without this guard a device would read it as "every file was deleted elsewhere" and trash its notes and its key file.
+
+## Shared store settings
+
+Some settings belong to a store and are shared by every device that uses it. So far: **where pasted pictures go** (default `Images`) and **where new notes go** (default the top level), under Settings → "Notes and pictures". Settings that belong to a device (auto-lock, Touch ID or fingerprint) stay on that device.
+
+Each device keeps a copy in its app data folder, and syncing keeps a shared copy in S3 as `.store/settings.json`, encrypted like every other file (the file's name is visible in the bucket, its contents are not). The notes sync ignores that path, so settings never produce a conflict to resolve and there is never any JSON to edit by hand:
+
+- **Every setting remembers when it was last changed**, and merging two copies keeps the later change for each setting. Two devices changing different settings keep both; two changing the same one, the later change wins (by each device's clock). Settings a device does not know about are passed through untouched.
+- **The file has a version.** A file from an older version is upgraded. A file from a *newer* version than this device understands is left exactly as it is: the device uses its own defaults, says so in Settings, and does not change the shared settings until Flint is updated there.
+- A damaged shared copy is replaced by this device's settings. A failure to sync settings never stops the notes syncing.
+- A folder is tidied when saved (slashes trimmed) and refused if it cannot be used: `..`, a backslash, a name starting with a dot (hidden folders are neither encrypted nor synced), or a name Windows cannot hold.

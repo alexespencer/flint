@@ -17,14 +17,17 @@ flint-crypto = { version = "0.0.0", path = "../flint-crypto" }
 flint-index = { version = "0.0.0", path = "../flint-index" }
 flint-registry = { version = "0.0.0", path = "../flint-registry" }
 flint-remote = { version = "0.0.0", path = "../flint-remote" }
+flint-settings = { version = "0.0.0", path = "../flint-settings" }
 flint-store-fs = { version = "0.0.0", path = "../flint-store-fs" }
 flint-sync = { version = "0.0.0", path = "../flint-sync" }
 flint-sync-state = { version = "0.0.0", path = "../flint-sync-state" }
 object_store = { version = "0.14.2", default-features = false }
+serde = { version = "1.0.229", features = ["derive"] }
+serde_json = "1.0.151"
+tempfile = "3.27.0"
 thiserror = "2.0.21"
 time = { version = "0.3.55", features = ["formatting", "macros"] }
 
 [dev-dependencies]
 flint-testkit = { version = "0.0.0", path = "../flint-testkit" }
-tempfile = "3.27.0"
 tokio = { version = "1.53.2", features = ["rt", "macros"] }

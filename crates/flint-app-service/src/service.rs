@@ -12,6 +12,7 @@ use flint_sync::{DeviceName, KeysCodec, Refusal, SyncReport, Syncer};
 use flint_sync_state::{Baseline, SyncState};
 
 use crate::indexing::{self, IndexStats};
+use crate::settings::SettingsSync;
 use crate::{Connect, Error, Result};
 
 /// How long a dropped-in file must have been quiet before it is encrypted (another program may still
@@ -34,6 +35,8 @@ pub struct SyncOutcome {
     pub adopted: AdoptReport,
     pub report: SyncReport,
     pub indexed: IndexStats,
+    /// What happened to the store's shared settings. A problem here never fails the sync of notes.
+    pub settings: SettingsSync,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -62,6 +65,8 @@ pub struct AppService<S, C> {
     device: DeviceName,
     kdf: KdfParams,
     quiet_period: Duration,
+    /// Milliseconds since 1970: stamps settings changes. Replaceable, so tests can control it.
+    clock_ms: Box<dyn Fn() -> u64 + Send + Sync>,
 }
 
 impl<S: SecretStore, C: Connect> AppService<S, C> {
@@ -72,7 +77,22 @@ impl<S: SecretStore, C: Connect> AppService<S, C> {
             device,
             kdf: KdfParams::DEFAULT,
             quiet_period: QUIET_PERIOD,
+            clock_ms: Box::new(|| {
+                std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .map_or(0, |d| d.as_millis() as u64)
+            }),
         }
+    }
+
+    /// Replaces the clock that stamps settings changes (milliseconds since 1970). For tests.
+    pub fn with_clock_ms(mut self, clock: impl Fn() -> u64 + Send + Sync + 'static) -> Self {
+        self.clock_ms = Box::new(clock);
+        self
+    }
+
+    pub(crate) fn now_ms(&self) -> u64 {
+        (self.clock_ms)()
     }
 
     /// Replaces the password-hashing cost used for new key files. For tests only: the default is
@@ -303,10 +323,15 @@ impl<S: SecretStore, C: Connect> AppService<S, C> {
             disk.remove_empty_parents(trashed)?;
         }
         let indexed = self.refresh_index(&record, &keys, &fs)?;
+        let settings = match self.remote_for(&record) {
+            Ok(remote) => self.sync_settings(&record, &keys, &remote).await,
+            Err(e) => SettingsSync::failed(e),
+        };
         Ok(SyncOutcome {
             adopted,
             report,
             indexed,
+            settings,
         })
     }
 

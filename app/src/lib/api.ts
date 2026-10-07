@@ -34,6 +34,9 @@ export interface SyncResult {
   conflicts: string[];
   refused: string[];
   failed: string[];
+  /** Another device's settings were newer, so this device's changed: read them again. */
+  settingsChanged: boolean;
+  settingsError: string | null;
 }
 
 export interface BiometricState {
@@ -47,6 +50,16 @@ export interface FolderInfo {
   path: string;
   /** When the folder was created on this device, in milliseconds since 1970. */
   createdMs: number;
+}
+
+/** A store's shared settings, with defaults filled in. They are kept on each device and synced through S3. */
+export interface SettingsInfo {
+  /** The folder a pasted or dropped picture is saved in; `""` is the top level. */
+  attachmentFolder: string;
+  /** The folder a new note goes in when no folder is typed. */
+  newNoteFolder: string;
+  /** Set when the store's shared settings came from a newer Flint: they are not used or changed here until Flint is updated. */
+  newerVersion: number | null;
 }
 
 export interface Hit {
@@ -70,7 +83,7 @@ export interface NewStore {
 
 /** An error from the Rust side: a stable `kind` to branch on and a message to show. */
 export interface CommandError {
-  kind: "locked" | "inConflict" | "storeMissingOnRemote" | "notFullySynced" | "nameMismatch" | "alreadyExists" | "biometricCancelled" | "keyInvalidated" | "wrongPassword" | "storeExists" | "noSuchStore" | "passwordChangedElsewhere" | "other";
+  kind: "locked" | "invalidFolder" | "settingsFromNewerVersion" | "inConflict" | "storeMissingOnRemote" | "notFullySynced" | "nameMismatch" | "alreadyExists" | "biometricCancelled" | "keyInvalidated" | "wrongPassword" | "storeExists" | "noSuchStore" | "passwordChangedElsewhere" | "other";
   message: string;
 }
 
@@ -112,6 +125,10 @@ export const api = {
   /** Saves bytes into the store (a pasted picture); returns the path it got, which differs if the name was taken. */
   saveFile: (id: string, path: string, bytes: ArrayBuffer) =>
     invoke<string>("save_file", bytes, { headers: { "x-store": id, "x-path": encodeURIComponent(path) } }),
+  getSettings: (id: string) => invoke<SettingsInfo>("get_settings", { id }),
+  /** Changes only the settings given; a folder that cannot be used is refused and nothing changes. */
+  setSettings: (id: string, change: { attachmentFolder?: string; newNoteFolder?: string }) =>
+    invoke<SettingsInfo>("set_settings", { id, attachmentFolder: change.attachmentFolder ?? null, newNoteFolder: change.newNoteFolder ?? null }),
   readNote: (id: string, path: string) => invoke<string>("read_note", { id, path }),
   saveNote: (id: string, path: string, text: string) => invoke<void>("save_note", { id, path, text }),
   search: (id: string, query: string) => invoke<Hit[]>("search", { id, query }),

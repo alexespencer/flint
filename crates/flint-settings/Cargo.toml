@@ -1,0 +1,20 @@
+[package]
+name = "flint-settings"
+description = "The settings that belong to one store and are shared by its devices: the data, the merge rule, the versioning."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+flint-core = { version = "0.0.0", path = "../flint-core" }
+serde = { version = "1.0.229", features = ["derive"] }
+serde_json = "1.0.151"
+thiserror = "2.0.21"
+
+[dev-dependencies]
+proptest = "1.11.0"

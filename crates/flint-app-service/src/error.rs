@@ -75,6 +75,16 @@ pub enum Error {
     NameMismatch,
 
     #[error(transparent)]
+    Settings(#[from] flint_settings::Error),
+
+    /// The store's shared settings were written by a newer Flint than this one. They are left alone, and cannot be
+    /// changed from this device until it is updated.
+    #[error(
+        "this store's shared settings are from a newer version of Flint (settings format {0}); update Flint on this device to change them"
+    )]
+    SettingsFromNewerVersion(u32),
+
+    #[error(transparent)]
     State(#[from] flint_sync_state::Error),
 
     #[error(transparent)]

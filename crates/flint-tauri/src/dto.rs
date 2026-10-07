@@ -2,7 +2,7 @@
 
 use std::path::PathBuf;
 
-use flint_app_service::{ConflictInfo, NewStore, Status, SyncOutcome};
+use flint_app_service::{ConflictInfo, NewStore, SettingsView, Status, SyncOutcome};
 use flint_registry::{RemoteSettings, StoreRecord};
 use flint_sync::{ConflictOutcome, Refusal};
 use serde::{Deserialize, Serialize};
@@ -84,6 +84,10 @@ pub struct SyncDto {
     pub conflicts: Vec<String>,
     pub refused: Vec<String>,
     pub failed: Vec<String>,
+    /// Another device's settings were newer, so this device's changed: read them again.
+    pub settings_changed: bool,
+    /// Why the shared settings could not be synced (the notes were synced regardless).
+    pub settings_error: Option<String>,
 }
 
 impl From<SyncOutcome> for SyncDto {
@@ -124,6 +128,8 @@ impl From<SyncOutcome> for SyncDto {
                 .iter()
                 .map(|(path, error)| format!("{path}: {error}"))
                 .collect(),
+            settings_changed: outcome.settings.changed_here,
+            settings_error: outcome.settings.error,
         }
     }
 }
@@ -140,6 +146,26 @@ fn refusal(why: &Refusal) -> &'static str {
         Refusal::LocalChangedDuringSync => "it changed while syncing; it will go next time",
         Refusal::KeyFileDiverged => "the password was changed on two devices at once",
         Refusal::Contended => "S3 kept changing under it; it will go next time",
+    }
+}
+
+/// A store's shared settings, with defaults filled in.
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SettingsDto {
+    pub attachment_folder: String,
+    pub new_note_folder: String,
+    /// Set when the store's shared settings came from a newer Flint: they are not used or changed here.
+    pub newer_version: Option<u32>,
+}
+
+impl From<SettingsView> for SettingsDto {
+    fn from(view: SettingsView) -> Self {
+        Self {
+            attachment_folder: view.settings.attachment_folder,
+            new_note_folder: view.settings.new_note_folder,
+            newer_version: view.newer_version,
+        }
     }
 }
 
@@ -227,6 +253,8 @@ impl From<flint_app_service::Error> for CmdError {
             E::StoreMissingOnRemote => "storeMissingOnRemote",
             E::NotFullySynced(_) => "notFullySynced",
             E::NameMismatch => "nameMismatch",
+            E::Settings(flint_settings::Error::InvalidFolder(_)) => "invalidFolder",
+            E::SettingsFromNewerVersion(_) => "settingsFromNewerVersion",
             E::Local(flint_store_fs::Error::AlreadyExists(_)) => "alreadyExists",
             _ => "other",
         };

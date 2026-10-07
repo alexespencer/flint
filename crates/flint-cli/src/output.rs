@@ -56,6 +56,19 @@ pub(crate) fn sync_outcome(out: &mut dyn Write, outcome: &SyncOutcome) -> io::Re
     for (path, why) in &outcome.indexed.failed {
         writeln!(out, "not indexed {path}: {why}")?;
     }
+    let settings = &outcome.settings;
+    if settings.changed_here {
+        writeln!(out, "settings updated from another device")?;
+    }
+    if let Some(version) = settings.newer_version {
+        writeln!(
+            out,
+            "the store's shared settings are from a newer Flint (format {version}); they were left alone"
+        )?;
+    }
+    if let Some(error) = &settings.error {
+        writeln!(out, "settings not synced: {error}")?;
+    }
     Ok(())
 }
 
