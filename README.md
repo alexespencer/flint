@@ -1,6 +1,6 @@
 # Flint
 
-Encrypted markdown notes for macOS, Android and Windows. A folder of `.md` files with `[[links]]`, backlinks and search, like Obsidian, where every file is encrypted with a password only you know, and each store syncs to an S3 bucket you own. Conflicts are kept, never merged: a changed-on-two-devices note shows up with both versions side by side.
+Encrypted markdown notes for macOS, Android and Windows with automated S3 sync. A folder of `.md` files with `[[links]]`, backlinks and search, like Obsidian. Every file is encrypted with a password only you know, and each store syncs to an S3 bucket you own. Conflicts are kept, never merged: a changed-on-two-devices note shows up with both versions side by side.
 
 The core is Rust, shared by the CLI and a [Tauri 2](https://tauri.app) app with a Svelte frontend.
 
