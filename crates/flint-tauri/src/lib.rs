@@ -125,6 +125,7 @@ pub fn run() {
             commands::delete_path,
             commands::move_path,
             commands::read_file,
+            commands::save_file,
             commands::read_note,
             commands::save_note,
             commands::search,

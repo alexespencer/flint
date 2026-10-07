@@ -210,3 +210,71 @@ async fn an_image_is_encrypted_on_disk_and_in_s3_and_comes_back_byte_for_byte() 
         Err(flint_app_service::Error::NothingAt(_))
     ));
 }
+
+#[tokio::test]
+async fn a_pasted_image_is_saved_encrypted_never_overwrites_and_can_be_linked_by_name() {
+    let (a, b) = fresh().await;
+    let id = a.id();
+    let image = fake_png();
+
+    let first = a
+        .svc
+        .save_attachment(&id, &p("Images/Pasted image 1.png"), &image)
+        .unwrap();
+    assert_eq!(first, p("Images/Pasted image 1.png"));
+    // pasting again in the same second must not replace the first
+    let second = a
+        .svc
+        .save_attachment(&id, &p("Images/Pasted image 1.png"), b"different")
+        .unwrap();
+    assert_eq!(second, p("Images/Pasted image 1 1.png"));
+    let third = a
+        .svc
+        .save_attachment(&id, &p("Images/Pasted image 1.png"), b"another")
+        .unwrap();
+    assert_eq!(third, p("Images/Pasted image 1 2.png"));
+    assert_eq!(a.svc.read_file(&id, &first).unwrap(), image);
+    assert_eq!(a.svc.read_file(&id, &second).unwrap(), b"different");
+
+    // encrypted on disk, indexed (so `![[Pasted image 1.png]]` resolves by name), and synced
+    assert!(
+        fs::read(a.dir.join("Images/Pasted image 1.png"))
+            .unwrap()
+            .starts_with(b"FLNT")
+    );
+    a.svc
+        .save_note(&id, &p("n.md"), "![[Pasted image 1.png]]")
+        .unwrap();
+    assert_eq!(
+        a.svc
+            .resolve_link(&id, &p("n.md"), "Pasted image 1.png")
+            .unwrap(),
+        Some(first.clone())
+    );
+    a.svc.sync(&id).await.unwrap();
+    b.svc.sync(&b.id()).await.unwrap();
+    assert_eq!(b.svc.read_file(&b.id(), &first).unwrap(), image);
+
+    // not into hidden or internal places, and the name may have no extension
+    for hidden in [".trash/x.png", ".store/key.json", ".git/x"] {
+        assert!(
+            matches!(
+                a.svc.save_attachment(&id, &p(hidden), b"x"),
+                Err(flint_app_service::Error::NotANote(_))
+            ),
+            "{hidden}"
+        );
+    }
+    assert_eq!(
+        a.svc
+            .save_attachment(&id, &p("Images/noext"), b"x")
+            .unwrap(),
+        p("Images/noext")
+    );
+    assert_eq!(
+        a.svc
+            .save_attachment(&id, &p("Images/noext"), b"y")
+            .unwrap(),
+        p("Images/noext 1")
+    );
+}

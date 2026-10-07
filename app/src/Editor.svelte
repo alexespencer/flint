@@ -23,6 +23,7 @@
     onchange,
     onopenlink,
     loadImage,
+    onpasteimages,
   }: {
     text: string;
     readonly?: boolean;
@@ -30,7 +31,12 @@
     onopenlink?: (target: string) => void;
     /** Where to get the picture an embed names: a URL the page can show, or `null` if there is no such image. */
     loadImage?: (target: string) => Promise<string | null>;
+    /** Pictures were pasted (or dropped, `dropped`) into the note: save them and return the text to insert (`![[name.png]]`). */
+    onpasteimages?: (files: File[], dropped: boolean) => Promise<string>;
   } = $props();
+
+  /** The pictures among some files from the clipboard or a drop. */
+  const pictures = (files: FileList | undefined | null) => [...(files ?? [])].filter((file) => file.type.startsWith("image/"));
 
   let host: HTMLDivElement | undefined = $state();
   let view: EditorView | undefined;
@@ -336,6 +342,27 @@
             }
           }),
           EditorView.domEventHandlers({
+            // a picture on the clipboard (a screenshot, "copy image") is saved into the store and linked
+            paste(event, v) {
+              const files = pictures(event.clipboardData?.files);
+              if (files.length === 0 || !onpasteimages || v.state.readOnly) return false;
+              event.preventDefault();
+              onpasteimages(files, false).then((insert) => {
+                if (insert) v.dispatch(v.state.replaceSelection(insert));
+              });
+              return true;
+            },
+            // picture files dragged in from the desktop are saved and linked where they are dropped
+            drop(event, v) {
+              const files = pictures(event.dataTransfer?.files);
+              if (files.length === 0 || !onpasteimages || v.state.readOnly) return false;
+              event.preventDefault();
+              const at = v.posAtCoords({ x: event.clientX, y: event.clientY }) ?? v.state.selection.main.head;
+              onpasteimages(files, true).then((insert) => {
+                if (insert) v.dispatch({ changes: { from: at, insert }, selection: { anchor: at + insert.length } });
+              });
+              return true;
+            },
             // A click on a rendered link follows it; Cmd/Ctrl+click follows one whose source is showing
             mousedown(event, v) {
               const rendered = event.target instanceof Element && !!event.target.closest(".cm-wikilink-rendered");

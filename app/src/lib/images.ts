@@ -42,3 +42,15 @@ export function parseEmbed(inner: string): Embed {
     alt: size ? "" : label,
   };
 }
+
+/** `20250723195845`: the local date and time as digits, the way Obsidian names a pasted picture. */
+function timestamp(date: Date): string {
+  const two = (n: number) => String(n).padStart(2, "0");
+  return `${date.getFullYear()}${two(date.getMonth() + 1)}${two(date.getDate())}${two(date.getHours())}${two(date.getMinutes())}${two(date.getSeconds())}`;
+}
+
+/** What to call a picture pasted from the clipboard: `Pasted image 20250723195845.png`; `null` if the type is not one we show. */
+export function pastedImageName(date: Date, mime: string): string | null {
+  const extension = Object.entries(MIME).find(([ext, type]) => type === mime && ext !== "jpeg")?.[0];
+  return extension ? `Pasted image ${timestamp(date)}.${extension}` : null;
+}

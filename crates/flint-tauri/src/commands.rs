@@ -321,6 +321,50 @@ pub async fn read_file(
         .map_err(Into::into)
 }
 
+/// Saves a file's bytes into the store (a pasted picture): the bytes arrive as the raw request body, and the store and
+/// the path (percent-encoded, since a header must be plain ASCII) as the `x-store` and `x-path` headers. Returns the
+/// path it was saved at, which differs from the one asked for if that name was taken.
+#[tauri::command]
+pub async fn save_file(
+    request: tauri::ipc::Request<'_>,
+    worker: State<'_, Worker<Service>>,
+) -> Result<String> {
+    let tauri::ipc::InvokeBody::Raw(bytes) = request.body() else {
+        return Err(CmdError::other(
+            "the file's bytes were not sent as raw data",
+        ));
+    };
+    let header = |name: &str| {
+        request
+            .headers()
+            .get(name)
+            .and_then(|value| value.to_str().ok())
+            .map(str::to_owned)
+            .ok_or_else(|| CmdError::other(format!("the {name} header is missing")))
+    };
+    let id = store_id(&header("x-store")?)?;
+    let path = percent_decode(&header("x-path")?)?;
+    let path = self::path(&path)?;
+    let bytes = bytes.clone();
+    worker
+        .call(move |svc| {
+            Box::pin(async move {
+                svc.save_attachment(&id, &path, &bytes)
+                    .map(|saved| saved.to_string())
+            })
+        })
+        .await
+        .map_err(Into::into)
+}
+
+/// Undoes JavaScript's `encodeURIComponent`.
+fn percent_decode(text: &str) -> Result<String> {
+    percent_encoding::percent_decode_str(text)
+        .decode_utf8()
+        .map(|decoded| decoded.into_owned())
+        .map_err(|_| CmdError::other("a path was not valid text"))
+}
+
 #[tauri::command]
 pub async fn read_note(
     worker: State<'_, Worker<Service>>,

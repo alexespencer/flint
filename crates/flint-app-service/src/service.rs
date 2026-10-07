@@ -403,6 +403,39 @@ impl<S: SecretStore, C: Connect> AppService<S, C> {
         Ok(fs.read(path)?)
     }
 
+    /// Saves a file's bytes into the store, encrypted: a picture pasted into a note, say. If something is already
+    /// called `path` the new file gets a number before its extension (`Pasted image 1.png`, `Pasted image 1 1.png`),
+    /// so a paste never overwrites anything. Returns where it was saved. Folders are made as needed.
+    pub fn save_attachment(
+        &self,
+        id: &StoreId,
+        path: &StorePath,
+        bytes: &[u8],
+    ) -> Result<StorePath> {
+        let (record, keys) = self.unlocked(id)?;
+        if !is_note_path(path) {
+            return Err(Error::NotANote(path.clone()));
+        }
+        let fs = EncryptedFs::new(DiskFs::new(&record.folder), keys.clone());
+        let mut target = path.clone();
+        let (stem, extension) = match path.as_str().rsplit_once('.') {
+            Some((stem, extension)) if !extension.contains('/') => {
+                (stem.to_owned(), format!(".{extension}"))
+            }
+            _ => (path.as_str().to_owned(), String::new()),
+        };
+        for n in 1.. {
+            if !fs.exists(&target)? {
+                break;
+            }
+            target = StorePath::new(format!("{stem} {n}{extension}"))?;
+        }
+        fs.write(&target, bytes)?;
+        let mut index = self.index(&record, &keys)?;
+        indexing::refresh_file(&fs, &mut index, &target)?;
+        Ok(target)
+    }
+
     /// Writes a note (encrypted, atomically) and updates the index.
     pub fn save_note(&self, id: &StoreId, path: &StorePath, text: &str) -> Result<()> {
         let (record, keys) = self.unlocked(id)?;

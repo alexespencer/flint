@@ -5,7 +5,7 @@
   import { autoLockMinutes } from "./lib/settings";
   import { pieces } from "./lib/snippet";
   import { ago } from "./lib/time";
-  import { imageMime, isImage } from "./lib/images";
+  import { imageMime, isImage, pastedImageName } from "./lib/images";
   import { baseName, buildTree, isNote, isWithin, moveTargets, parentOf, title, type TreeNode } from "./lib/tree";
   import ConflictView from "./ConflictView.svelte";
   import ContextMenu, { type MenuItem } from "./ContextMenu.svelte";
@@ -219,6 +219,34 @@
     } catch (e) {
       say(errorMessage(e), true);
     }
+  }
+
+  /** Where a pasted or dropped picture is saved. (To become a setting.) */
+  const PICTURE_FOLDER = "Images";
+
+  /** Saves pictures pasted or dropped into the open note, in the pictures folder, and returns the links to insert. */
+  async function pasteImages(files: File[], dropped: boolean): Promise<string> {
+    const folder = PICTURE_FOLDER;
+    const embeds: string[] = [];
+    for (const file of files) {
+      // a pasted screenshot has no real name; a dropped file keeps the one it has
+      const name = dropped && isImage(file.name) ? file.name : pastedImageName(new Date(), file.type);
+      if (!name) {
+        say(`${file.type || "That kind of file"} is not a picture type Flint can show (png, jpg, gif, webp, avif, bmp, svg).`, true);
+        continue;
+      }
+      try {
+        const saved = await api.saveFile(store.id, folder ? `${folder}/${name}` : name, await file.arrayBuffer());
+        embeds.push(`![[${baseName(saved)}]]`);
+      } catch (e) {
+        say(`Could not save the picture: ${errorMessage(e)}`, true);
+      }
+    }
+    if (embeds.length > 0) {
+      await loadFiles();
+      markUnsynced();
+    }
+    return embeds.join("\n");
   }
 
   async function createNote(name: string) {
@@ -651,7 +679,7 @@
               <img src={current.image} alt={title(current.path)} />
             </div>
           {:else}
-            <Editor text={current.text} onchange={edited} onopenlink={openLink} {loadImage} />
+            <Editor text={current.text} onchange={edited} onopenlink={openLink} {loadImage} onpasteimages={pasteImages} />
           {/if}
         </div>
       {/key}

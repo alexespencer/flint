@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { imageMime, isImage, parseEmbed } from "./images";
+import { imageMime, isImage, parseEmbed, pastedImageName } from "./images";
 
 describe("imageMime", () => {
   it("knows the usual picture types, whatever the case", () => {
@@ -26,5 +26,19 @@ describe("parseEmbed", () => {
     expect(parseEmbed("pic.png|a map of the forest")).toEqual({ target: "pic.png", width: null, alt: "a map of the forest" });
     expect(parseEmbed(" Pasted image 1.png ")).toMatchObject({ target: "Pasted image 1.png" });
     expect(parseEmbed("note#Heading").target).toBe("note");
+  });
+});
+
+describe("pastedImageName", () => {
+  it("names a pasted picture by the local time, as Obsidian does", () => {
+    const when = new Date(2025, 6, 23, 19, 58, 45); // 23 July 2025, 19:58:45 local time
+    expect(pastedImageName(when, "image/png")).toBe("Pasted image 20250723195845.png");
+    expect(pastedImageName(new Date(2026, 0, 2, 3, 4, 5), "image/jpeg")).toBe("Pasted image 20260102030405.jpg");
+    expect(pastedImageName(when, "image/webp")).toBe("Pasted image 20250723195845.webp");
+  });
+
+  it("has no name for what is not a picture the app shows", () => {
+    expect(pastedImageName(new Date(), "application/pdf")).toBeNull();
+    expect(pastedImageName(new Date(), "")).toBeNull();
   });
 });

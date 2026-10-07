@@ -80,6 +80,21 @@ pub(crate) fn refresh_one(
     Ok(())
 }
 
+/// [`refresh_one`] for a file that may be an attachment (a picture, say) rather than a note.
+pub(crate) fn refresh_file(
+    fs: &EncryptedFs<DiskFs>,
+    index: &mut Index,
+    path: &StorePath,
+) -> Result<()> {
+    if is_markdown(path) {
+        return refresh_one(fs, index, path);
+    }
+    use flint_store_fs::LocalFs;
+    let stamp = stamp(&fs.raw().entry(path)?);
+    index.upsert_attachment(path, &stamp)?;
+    Ok(())
+}
+
 fn is_markdown(path: &StorePath) -> bool {
     path.as_path()
         .extension()

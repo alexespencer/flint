@@ -109,6 +109,9 @@ export const api = {
   movePath: (id: string, from: string, to: string) => invoke<number>("move_path", { id, from, to }),
   /** The decrypted bytes of a file (an image, say). */
   readFile: (id: string, path: string) => invoke<ArrayBuffer>("read_file", { id, path }),
+  /** Saves bytes into the store (a pasted picture); returns the path it got, which differs if the name was taken. */
+  saveFile: (id: string, path: string, bytes: ArrayBuffer) =>
+    invoke<string>("save_file", bytes, { headers: { "x-store": id, "x-path": encodeURIComponent(path) } }),
   readNote: (id: string, path: string) => invoke<string>("read_note", { id, path }),
   saveNote: (id: string, path: string, text: string) => invoke<void>("save_note", { id, path, text }),
   search: (id: string, query: string) => invoke<Hit[]>("search", { id, query }),
