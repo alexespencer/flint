@@ -1,32 +1,22 @@
 # Flint
 
-Encrypted markdown notes for macOS, Android and Windows. A folder of `.md` files with `[[links]]`, backlinks and search, like
-Obsidian, where every file is encrypted with a password only you know, and each store syncs to an S3 bucket you own.
-Conflicts are kept, never merged: a changed-on-two-devices note shows up with both versions side by side.
+Encrypted markdown notes for macOS, Android and Windows. A folder of `.md` files with `[[links]]`, backlinks and search, like Obsidian, where every file is encrypted with a password only you know, and each store syncs to an S3 bucket you own. Conflicts are kept, never merged: a changed-on-two-devices note shows up with both versions side by side.
 
 The core is Rust, shared by the CLI and a [Tauri 2](https://tauri.app) app with a Svelte frontend.
 
-**Status:** in development, and **not independently audited** (see [SECURITY.md](SECURITY.md)). The
-core, sync, command line, and the macOS, Android and Windows apps are built; nothing is signed or released yet. What is
-built and what is left: [docs/roadmap.md](docs/roadmap.md).
+**Status:** in development, and **not independently audited** (see [SECURITY.md](SECURITY.md)). The core, sync, command line, and the macOS, Android and Windows apps are built; nothing is signed or released yet. What is built and what is left: [docs/roadmap.md](docs/roadmap.md).
 
 ## What you need
 
 | For | You need |
-|---|---|
+| --- | --- |
 | everything | Rust (the toolchain is pinned in `rust-toolchain.toml` and installed by `rustup` on first build) |
 | the app | [bun](https://bun.sh), and the Tauri CLI: `cargo install tauri-cli --version "^2" --locked` |
 | the phone | JDK 17, Android SDK + NDK `30.0.14904198`, `adb`, a phone with USB debugging on |
 | the icons | `rsvg-convert` (`brew install librsvg`), only to regenerate them |
 | syncing | **S3-compatible storage**: a bucket, and an access key with read and write on it (see below) |
 
-**S3-compatible storage.** Flint syncs through any S3-compatible service, with your own bucket and key; nothing goes
-through a server of mine. One store is one bucket plus a folder (prefix) in it, and several stores can share a bucket.
-The service must support **conditional writes** (`If-Match` / `If-None-Match` on a PUT): that is how a second device's
-change is detected instead of silently overwriting. **Cloudflare R2** is what Flint is tested against, and its free
-tier is plenty for notes. AWS S3 supports conditional writes too, but I have not tried it. To check a service before
-trusting it with notes, run the contract tests against a scratch bucket with `scripts/s3-tests.sh`
-([`docs/s3-testing.md`](docs/s3-testing.md)); they exercise exactly the behaviour sync depends on.
+**S3-compatible storage.** Flint syncs through any S3-compatible service, with your own bucket and key; nothing goes through a server of mine. One store is one bucket plus a folder (prefix) in it, and several stores can share a bucket. The service must support **conditional writes** (`If-Match` / `If-None-Match` on a PUT): that is how a second device's change is detected instead of silently overwriting. **Cloudflare R2** is what Flint is tested against, and its free tier is plenty for notes. AWS S3 supports conditional writes too, but I have not tried it. To check a service before trusting it with notes, run the contract tests against a scratch bucket with `scripts/s3-tests.sh` ([`docs/s3-testing.md`](docs/s3-testing.md)); they exercise exactly the behaviour sync depends on.
 
 ## Run the app on the Mac
 
@@ -36,9 +26,7 @@ cd ../crates/flint-tauri
 cargo tauri dev                # starts Vite and the app; frontend edits reload live
 ```
 
-First launch: **New store** (a name, a folder, your S3 details, a password) or **Join existing** (the same S3 details and
-the store's password). Notes dropped into the store's folder are encrypted in place. The folder defaults to
-`~/Flint/<name>`.
+First launch: **New store** (a name, a folder, your S3 details, a password) or **Join existing** (the same S3 details and the store's password). Notes dropped into the store's folder are encrypted in place. The folder defaults to `~/Flint/<name>`.
 
 To build a real `.app`:
 
@@ -48,8 +36,7 @@ cargo tauri build --debug --bundles app      # target/debug/bundle/macos/Flint.a
 open ../../target/debug/bundle/macos/Flint.app
 ```
 
-It is unsigned, so macOS asks for permission to read the keychain once per run of a freshly built binary (click
-"Always Allow"). Touch ID unlock is offered after the first password unlock.
+It is unsigned, so macOS asks for permission to read the keychain once per run of a freshly built binary (click "Always Allow"). Touch ID unlock is offered after the first password unlock.
 
 ## Build and push to the phone
 
@@ -60,10 +47,7 @@ scripts/android-run.sh            # build the debug APK (arm64), install it, sta
 scripts/android-run.sh --logs     # the same, then follow the app's log
 ```
 
-That script sources `scripts/android-env.sh`, which sets up `JAVA_HOME`, the SDK and the NDK (SQLCipher builds OpenSSL
-from source and needs the NDK's tools on `PATH`). The first build takes a few minutes. On the phone: **Join existing**,
-sync, and the store's notes arrive (store folders live in the app's private storage). Details and the Android design
-notes are in [`docs/app.md`](docs/app.md).
+That script sources `scripts/android-env.sh`, which sets up `JAVA_HOME`, the SDK and the NDK (SQLCipher builds OpenSSL from source and needs the NDK's tools on `PATH`). The first build takes a few minutes. On the phone: **Join existing**, sync, and the store's notes arrive (store folders live in the app's private storage). Details and the Android design notes are in [`docs/app.md`](docs/app.md).
 
 ## The command line
 
@@ -86,14 +70,11 @@ cd app && bun run check && bun run test
 
 Opt-in tests (they touch real things, so they are `#[ignore]`d):
 
-- `scripts/s3-tests.sh` runs the remote contract suite against **your real bucket** (keys in a git-ignored `.env`; see
-  [`docs/s3-testing.md`](docs/s3-testing.md)). Run it only when changing the storage layer.
+- `scripts/s3-tests.sh` runs the remote contract suite against **your real bucket** (keys in a git-ignored `.env`; see [`docs/s3-testing.md`](docs/s3-testing.md)). Run it only when changing the storage layer.
 - `cargo test -p flint-registry -- --ignored --test-threads=1` round-trips the macOS login keychain.
-- `FLINT_SAMPLE_VAULT=<folder> cargo test -p flint-app-service -- --ignored` syncs a copy of a real vault between two
-  simulated devices, in memory.
+- `FLINT_SAMPLE_VAULT=<folder> cargo test -p flint-app-service -- --ignored` syncs a copy of a real vault between two simulated devices, in memory.
 
-The sync engine is also checked by a property-based simulation of three devices with injected failures
-([`docs/sync-testing.md`](docs/sync-testing.md)).
+The sync engine is also checked by a property-based simulation of three devices with injected failures ([`docs/sync-testing.md`](docs/sync-testing.md)).
 
 ## How it fits together
 
@@ -128,10 +109,7 @@ Nothing below the shells imports Tauri, so the whole stack, encryption included,
 
 ## Security, in short
 
-Each store has its own password. The password is stretched with Argon2id into a key that unwraps a random data key
-kept in `.store/key.json`; every file's contents are encrypted with it (XChaCha20-Poly1305, the file's path
-authenticated), so S3 and a stolen device hold only ciphertext. File names and sizes are visible. Folders starting
-with `.` (such as `.git`) are never synced or encrypted. There is no password recovery.
+Each store has its own password. The password is stretched with Argon2id into a key that unwraps a random data key kept in `.store/key.json`; every file's contents are encrypted with it (XChaCha20-Poly1305, the file's path authenticated), so S3 and a stolen device hold only ciphertext. File names and sizes are visible. Folders starting with `.` (such as `.git`) are never synced or encrypted. There is no password recovery.
 
 ## License
 
