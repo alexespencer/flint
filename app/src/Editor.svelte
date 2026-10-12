@@ -341,6 +341,61 @@
     { decorations: (plugin) => plugin.decorations },
   );
 
+  const codeLine = Decoration.line({ class: "cm-codeblock" });
+  const fenceHidden = Decoration.line({ class: "cm-codeblock cm-fence-hidden" });
+
+  /**
+   * Code, rendered: `inline` loses its backticks and a fenced block gets a background with its fence lines
+   * collapsed, except where the cursor or selection touches it, so the source can be edited.
+   */
+  function codeDecorations(view: EditorView): DecorationSet {
+    const builder = new RangeSetBuilder<Decoration>();
+    const state = view.state;
+    const selection = state.selection.ranges;
+    for (const { from, to } of view.visibleRanges) {
+      syntaxTree(state).iterate({
+        from,
+        to,
+        enter(node) {
+          if (node.name === "InlineCode") {
+            if (selection.some((r) => r.from <= node.to && r.to >= node.from)) return false;
+            for (let c = node.node.firstChild; c; c = c.nextSibling) {
+              if (c.name === "CodeMark") builder.add(c.from, c.to, hidden);
+            }
+            return false;
+          }
+          if (node.name === "FencedCode") {
+            const first = state.doc.lineAt(node.from).number;
+            const last = state.doc.lineAt(node.to).number;
+            const editing = selection.some((r) => r.from <= node.to && r.to >= node.from);
+            const closed = node.node.lastChild?.name === "CodeMark" && last > first;
+            for (let n = first; n <= last; n++) {
+              const fence = n === first || (closed && n === last);
+              builder.add(state.doc.line(n).from, state.doc.line(n).from, fence && !editing ? fenceHidden : codeLine);
+            }
+            return false;
+          }
+        },
+      });
+    }
+    return builder.finish();
+  }
+
+  const codePlugin = ViewPlugin.fromClass(
+    class {
+      decorations: DecorationSet;
+      constructor(view: EditorView) {
+        this.decorations = codeDecorations(view);
+      }
+      update(update: ViewUpdate) {
+        if (update.docChanged || update.selectionSet || update.viewportChanged || syntaxTree(update.state) !== syntaxTree(update.startState)) {
+          this.decorations = codeDecorations(update.view);
+        }
+      }
+    },
+    { decorations: (plugin) => plugin.decorations },
+  );
+
   const highlight = HighlightStyle.define([
     { tag: tags.heading1, fontSize: "1.55em", fontWeight: "700" },
     { tag: tags.heading2, fontSize: "1.3em", fontWeight: "700" },
@@ -351,7 +406,7 @@
     { tag: tags.strikethrough, textDecoration: "line-through" },
     { tag: tags.link, color: "var(--accent)" },
     { tag: tags.url, color: "var(--fg-dim)" },
-    { tag: tags.monospace, fontFamily: "ui-monospace, Menlo, monospace", fontSize: "0.92em" },
+    { tag: tags.monospace, fontFamily: "ui-monospace, Menlo, monospace", fontSize: "0.92em", backgroundColor: "var(--bg-side)", borderRadius: "3px" },
     { tag: tags.quote, color: "var(--fg-dim)", fontStyle: "italic" },
     { tag: tags.processingInstruction, color: "var(--fg-dim)" },
   ]);
@@ -370,6 +425,7 @@
           Prec.high(keymap.of([{ key: "Mod-Enter", run: toggleTaskAtCursor }, indentWithTab])),
           taskPlugin,
           headingPlugin,
+          codePlugin,
           syntaxHighlighting(highlight),
           wikilinkPlugin,
           imagePlugin,
@@ -495,6 +551,14 @@
     vertical-align: -0.12em;
     accent-color: var(--accent);
     cursor: pointer;
+  }
+  .editor :global(.cm-codeblock) {
+    background: var(--bg-side);
+    font-family: ui-monospace, Menlo, monospace;
+    font-size: 0.92em;
+  }
+  .editor :global(.cm-fence-hidden) {
+    display: none;
   }
   .editor :global(.cm-task-done) {
     color: var(--fg-dim);
