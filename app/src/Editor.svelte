@@ -303,6 +303,44 @@
     return true;
   }
 
+  /** Hides the `#`s (and the space after) of ATX headings, except on a line the cursor or selection touches. */
+  function headingDecorations(view: EditorView): DecorationSet {
+    const builder = new RangeSetBuilder<Decoration>();
+    const state = view.state;
+    const selection = state.selection.ranges;
+    for (const { from, to } of view.visibleRanges) {
+      syntaxTree(state).iterate({
+        from,
+        to,
+        enter(node) {
+          if (node.name !== "HeaderMark") return;
+          const line = state.doc.lineAt(node.from);
+          if (node.from !== line.from + (/^\s*/.exec(line.text)?.[0].length ?? 0)) return; // a closing `##`
+          if (selection.some((r) => r.from <= line.to && r.to >= line.from)) return;
+          let end = node.to;
+          if (state.sliceDoc(end, end + 1) === " ") end++;
+          if (end > node.from) builder.add(node.from, end, hidden);
+        },
+      });
+    }
+    return builder.finish();
+  }
+
+  const headingPlugin = ViewPlugin.fromClass(
+    class {
+      decorations: DecorationSet;
+      constructor(view: EditorView) {
+        this.decorations = headingDecorations(view);
+      }
+      update(update: ViewUpdate) {
+        if (update.docChanged || update.selectionSet || update.viewportChanged || syntaxTree(update.state) !== syntaxTree(update.startState)) {
+          this.decorations = headingDecorations(update.view);
+        }
+      }
+    },
+    { decorations: (plugin) => plugin.decorations },
+  );
+
   const highlight = HighlightStyle.define([
     { tag: tags.heading1, fontSize: "1.55em", fontWeight: "700" },
     { tag: tags.heading2, fontSize: "1.3em", fontWeight: "700" },
@@ -331,6 +369,7 @@
           indentUnit.of("    "),
           Prec.high(keymap.of([{ key: "Mod-Enter", run: toggleTaskAtCursor }, indentWithTab])),
           taskPlugin,
+          headingPlugin,
           syntaxHighlighting(highlight),
           wikilinkPlugin,
           imagePlugin,
