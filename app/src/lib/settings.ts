@@ -34,3 +34,36 @@ export function setAutoLockMinutes(minutes: number) {
     // not saved: the setting lasts until the app is closed
   }
 }
+
+export type Theme = "auto" | "light" | "dark";
+export const THEME_CHOICES: { theme: Theme; label: string }[] = [
+  { theme: "auto", label: "Match the system" },
+  { theme: "light", label: "Light" },
+  { theme: "dark", label: "Dark" },
+];
+const THEME_KEY = "flint.theme";
+
+/** A stored value as a theme: anything unrecognised is auto. */
+export function parseTheme(raw: string | null): Theme {
+  return raw === "light" || raw === "dark" ? raw : "auto";
+}
+
+export function theme(): Theme {
+  try {
+    return parseTheme(localStorage.getItem(THEME_KEY));
+  } catch {
+    return "auto";
+  }
+}
+
+/** Shows the theme now (auto leaves it to the system) and remembers it. */
+export function applyTheme(choice: Theme, save = false) {
+  if (choice === "auto") document.documentElement.removeAttribute("data-theme");
+  else document.documentElement.dataset.theme = choice;
+  if (!save) return;
+  try {
+    localStorage.setItem(THEME_KEY, choice);
+  } catch {
+    // not saved: the choice lasts until the app is closed
+  }
+}

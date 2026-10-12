@@ -4,7 +4,8 @@
   import { api, errorMessage, isAndroid, type BiometricState, type SettingsInfo, type StoreInfo } from "./lib/api";
   import { removeStoreFlow } from "./lib/storeActions";
   import { backLayer } from "./lib/layers";
-  import { AUTO_LOCK_CHOICES, autoLockMinutes, setAutoLockMinutes } from "./lib/settings";
+  import { chooseTheme, themeState } from "./lib/themeState.svelte";
+  import { AUTO_LOCK_CHOICES, THEME_CHOICES, autoLockMinutes, setAutoLockMinutes, type Theme } from "./lib/settings";
 
   let {
     store,
@@ -160,6 +161,14 @@
         </div>
       {:else if tab === "app"}
         <p class="which dim">Applies to this device only</p>
+        <label class="row">
+          <span>Theme</span>
+          <select value={themeState.value} onchange={(e) => chooseTheme(e.currentTarget.value as Theme)}>
+            {#each THEME_CHOICES as choice (choice.theme)}
+              <option value={choice.theme}>{choice.label}</option>
+            {/each}
+          </select>
+        </label>
         <label class="row">
           <span>Lock after being idle for</span>
           <select value={minutes} onchange={(e) => chooseMinutes(Number(e.currentTarget.value))}>

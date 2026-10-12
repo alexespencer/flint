@@ -15,6 +15,7 @@
   import Editor from "./Editor.svelte";
   import FileTree from "./FileTree.svelte";
   import Settings from "./Settings.svelte";
+  import ThemeSwitch from "./ThemeSwitch.svelte";
 
   let {
     store,
@@ -685,6 +686,7 @@
             Links{backlinks.length ? ` (${backlinks.length})` : ""}
           </button>
         {/if}
+        <ThemeSwitch />
       </div>
       {#key current.path}
         <div class="editor-host">
@@ -698,6 +700,7 @@
         </div>
       {/key}
     {:else}
+      <div class="corner"><ThemeSwitch /></div>
       <div class="empty dim">
         <p>Open a note from the sidebar, or press ＋ to make one.</p>
         <p>In a note, click a <code>[[link]]</code> to follow it (arrow keys move into it to edit it).</p>
@@ -983,6 +986,11 @@
     align-items: baseline;
     padding: 10px 18px 8px;
     border-bottom: 1px solid var(--border);
+  }
+  .corner {
+    display: flex;
+    justify-content: flex-end;
+    padding: 10px 18px 0;
   }
   .title {
     font-weight: 600;
