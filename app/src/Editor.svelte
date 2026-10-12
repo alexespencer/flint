@@ -12,6 +12,7 @@
   } from "@codemirror/view";
   import { defaultKeymap, history, historyKeymap, indentWithTab } from "@codemirror/commands";
   import { markdown, markdownLanguage } from "@codemirror/lang-markdown";
+  import { languages } from "@codemirror/language-data";
   import { HighlightStyle, indentUnit, syntaxHighlighting, syntaxTree } from "@codemirror/language";
   import { tags } from "@lezer/highlight";
   import { isImage, parseEmbed } from "./lib/images";
@@ -409,6 +410,13 @@
     { tag: tags.monospace, fontFamily: "ui-monospace, Menlo, monospace", fontSize: "0.92em", backgroundColor: "var(--bg-side)", borderRadius: "3px" },
     { tag: tags.quote, color: "var(--fg-dim)", fontStyle: "italic" },
     { tag: tags.processingInstruction, color: "var(--fg-dim)" },
+    // code inside fenced blocks (parsed by the block's language)
+    { tag: [tags.keyword, tags.operatorKeyword, tags.modifier, tags.controlKeyword], color: "var(--syn-keyword)" },
+    { tag: [tags.string, tags.regexp, tags.special(tags.string)], color: "var(--syn-string)" },
+    { tag: [tags.number, tags.bool, tags.null, tags.atom], color: "var(--syn-number)" },
+    { tag: [tags.function(tags.variableName), tags.function(tags.propertyName), tags.macroName], color: "var(--syn-func)" },
+    { tag: [tags.typeName, tags.className, tags.namespace], color: "var(--syn-type)" },
+    { tag: [tags.comment, tags.lineComment, tags.blockComment], color: "var(--fg-dim)", fontStyle: "italic" },
   ]);
 
   onMount(() => {
@@ -419,7 +427,7 @@
         extensions: [
           history(),
           keymap.of([...defaultKeymap, ...historyKeymap]),
-          markdown({ base: markdownLanguage }), // GitHub-flavoured: task lists, strikethrough, tables
+          markdown({ base: markdownLanguage, codeLanguages: languages }), // GitHub-flavoured: task lists, strikethrough, tables
           // Tab indents a list item (Shift+Tab outdents) instead of moving the browser's focus out of the editor
           indentUnit.of("    "),
           Prec.high(keymap.of([{ key: "Mod-Enter", run: toggleTaskAtCursor }, indentWithTab])),

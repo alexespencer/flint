@@ -11,6 +11,11 @@
   --danger: #b3261e;
   --ok: #2e7d32;
   --mark: #ffe08a;
+  --syn-keyword: #8f3fb5;
+  --syn-string: #2e7d32;
+  --syn-number: #b35c00;
+  --syn-func: #1f5fbf;
+  --syn-type: #0b7a75;
   color-scheme: light dark;
   font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
   font-size: 14px;
@@ -30,6 +35,11 @@
     --danger: #ff8a80;
     --ok: #81c784;
     --mark: #6b5a1a;
+    --syn-keyword: #d79bf0;
+    --syn-string: #9ccc7a;
+    --syn-number: #ffb86b;
+    --syn-func: #7db4ff;
+    --syn-type: #5fd4cc;
   }
 }
 
