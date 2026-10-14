@@ -60,6 +60,10 @@ export function theme(): Theme {
 export function applyTheme(choice: Theme, save = false) {
   if (choice === "auto") document.documentElement.removeAttribute("data-theme");
   else document.documentElement.dataset.theme = choice;
+  // the window's own frame (the title bar on a desktop) follows too; null hands it back to the system
+  import("@tauri-apps/api/window")
+    .then(({ getCurrentWindow }) => getCurrentWindow().setTheme(choice === "auto" ? null : choice))
+    .catch(() => {}); // no window frame to theme (Android, or a plain browser)
   if (!save) return;
   try {
     localStorage.setItem(THEME_KEY, choice);
