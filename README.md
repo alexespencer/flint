@@ -4,7 +4,18 @@ Encrypted markdown notes for macOS, Android and Windows with automated S3 sync. 
 
 The core is Rust, shared by the CLI and a [Tauri 2](https://tauri.app) app with a Svelte frontend.
 
-**Status:** in development, and **not independently audited** (see [SECURITY.md](SECURITY.md)). The core, sync, command line, and the macOS, Android and Windows apps are built; nothing is signed or released yet. What is built and what is left: [docs/roadmap.md](docs/roadmap.md).
+<!-- TODO: screenshot of the app (a note open, with the sidebar and backlinks) -->
+
+**Status:** in development, and **not independently audited** (see [SECURITY.md](SECURITY.md)). The core, sync, command line, and the macOS, Android and Windows apps are built; nothing is signed yet. Windows has an installer (built by CI, see [`docs/windows.md`](docs/windows.md)). For macOS and Android, build from source for now (below); a `.dmg` installer and an Android app that updates itself are planned. What is built and what is left: [docs/roadmap.md](docs/roadmap.md).
+
+## What it does
+
+- **Notes** are plain markdown files in a folder, with `[[wikilinks]]`, backlinks, tags and full-text search.
+- **The editor** shows markdown as you write it: headings, task-list checkboxes, inline code, fenced code blocks with syntax highlighting, and images (paste or drop one in and it is saved encrypted). The source of a line shows while the cursor is on it.
+- **Sync** is automatic, to your own S3 bucket, and a conflict is kept as two versions to resolve rather than merged.
+- **Light, dark or follow the system**, on every device.
+
+<!-- TODO: second screenshot, e.g. the conflict view or the dark theme -->
 
 ## What you need
 

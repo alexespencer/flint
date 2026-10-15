@@ -1,4 +1,4 @@
-# The macOS app
+# The desktop and Android apps
 
 Svelte 5 + TypeScript frontend in `app/`, Tauri 2 shell in `crates/flint-tauri`. All logic is in the Rust crates below it.
 
@@ -61,7 +61,7 @@ A store can be created, and joined, with the password left empty (a warning is s
 
 ## Shared store settings
 
-Some settings belong to a store and are shared by every device that uses it. So far: **where pasted pictures go** (default `Images`) and **where new notes go** (default the top level), under Settings → "Notes and pictures". Settings that belong to a device (auto-lock, Touch ID or fingerprint) stay on that device.
+Some settings belong to a store and are shared by every device that uses it. So far: **where pasted pictures go** (default `Images`) and **where new notes go** (default the top level), under Settings → "Notes and pictures". Settings that belong to a device (auto-lock, theme, Touch ID or fingerprint) stay on that device.
 
 Each device keeps a copy in its app data folder, and syncing keeps a shared copy in S3 as `.store/settings.json`, encrypted like every other file (the file's name is visible in the bucket, its contents are not). The notes sync ignores that path, so settings never produce a conflict to resolve and there is never any JSON to edit by hand:
 

@@ -17,7 +17,7 @@ What is built, and what is left. Flint is one person's project, so this is a lis
 - A screen for changing a store's password (the command line can already do it), including setting one on a store that was made without.
 - A real progress indicator for sync (the engine knows how many files it will move before it starts).
 - Restore from trash, and drag and drop to move files and folders.
-- Live-preview rendering in the editor (headings, emphasis), and a highlighted diff in the conflict view.
+- Live-preview rendering of emphasis and links in the editor (headings, inline code and code blocks are already rendered), and a highlighted diff in the conflict view.
 - A visual refresh: spacing, typography, the sidebar and header.
 
 **Sync and robustness**
@@ -31,7 +31,8 @@ What is built, and what is left. Flint is one person's project, so this is a lis
 **Releases**
 
 - Build a signed Android APK in CI and publish it with releases (for example for updating through Obtainium), and a smaller release profile (strip symbols, link-time optimisation; the APK is about 33 MB today).
-- A macOS build in CI (needs a decision on signing).
+- A macOS build in CI (needs a decision on signing), published as a `.dmg` installer.
+- Automatic updates for the Android app.
 
 ## Later
 
@@ -39,7 +40,6 @@ What is built, and what is left. Flint is one person's project, so this is a lis
 - "Open in external editor": decrypt a note to a temporary file, watch it, and re-encrypt on save, so any editor works without leaving plaintext in the store folder (today notes are binary files and only plaintext replacement works).
 - Android background sync (WorkManager).
 - Automatic resolution of simple conflicts: a three-way merge, as git does, when the two devices changed different parts of a note (the last synced version is the common ancestor). Edits to the same lines would still be kept as two versions, and a merge would be reported and undoable. Today every conflict is kept for you to resolve.
-- Preview of attachments (images, PDFs).
 - Full key rotation (re-encrypting every file under a new data key).
 - Moving several notes at once.
 
