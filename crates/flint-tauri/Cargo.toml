@@ -29,12 +29,10 @@ dirs = "7.0.0"
 flint-crypto = { version = "0.0.0", path = "../flint-crypto" }
 flint-app-service = { version = "0.0.0", path = "../flint-app-service" }
 flint-core = { version = "0.0.0", path = "../flint-core" }
-flint-index = { version = "0.0.0", path = "../flint-index" }
 flint-registry = { version = "0.0.0", path = "../flint-registry" }
 flint-settings = { version = "0.0.0", path = "../flint-settings" }
 flint-store-fs = { version = "0.0.0", path = "../flint-store-fs" }
 flint-sync = { version = "0.0.0", path = "../flint-sync" }
-futures = "0.3.34"
 gethostname = "1.1.0"
 percent-encoding = "2.3.2"
 serde = { version = "1.0.229", features = ["derive"] }

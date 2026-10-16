@@ -25,7 +25,6 @@ flint-core = { version = "0.0.0", path = "../flint-core" }
 flint-crypto = { version = "0.0.0", path = "../flint-crypto" }
 flint-registry = { version = "0.0.0", path = "../flint-registry" }
 flint-remote = { version = "0.0.0", path = "../flint-remote" }
-flint-store-fs = { version = "0.0.0", path = "../flint-store-fs" }
 flint-sync = { version = "0.0.0", path = "../flint-sync" }
 gethostname = "1.1.0"
 rpassword = "7.5.4"

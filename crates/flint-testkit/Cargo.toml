@@ -14,7 +14,6 @@ workspace = true
 flint-core = { version = "0.0.0", path = "../flint-core" }
 flint-crypto = { version = "0.0.0", path = "../flint-crypto" }
 flint-index = { version = "0.0.0", path = "../flint-index" }
-flint-md-parse = { version = "0.0.0", path = "../flint-md-parse" }
 flint-store-fs = { version = "0.0.0", path = "../flint-store-fs" }
 tempfile = "3.27.0"
 walkdir = "2.5.0"

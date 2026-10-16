@@ -1287,7 +1287,6 @@ dependencies = [
  "flint-crypto",
  "flint-registry",
  "flint-remote",
- "flint-store-fs",
  "flint-sync",
  "gethostname",
  "rpassword",
@@ -1352,7 +1351,6 @@ dependencies = [
  "regex",
  "serde-saphyr",
  "serde_json",
- "thiserror 2.0.21",
 ]
 
 [[package]]
@@ -1386,7 +1384,6 @@ dependencies = [
  "tokio",
  "url",
  "webpki-root-certs",
- "zeroize",
 ]
 
 [[package]]
@@ -1451,12 +1448,10 @@ dependencies = [
  "flint-app-service",
  "flint-core",
  "flint-crypto",
- "flint-index",
  "flint-registry",
  "flint-settings",
  "flint-store-fs",
  "flint-sync",
- "futures",
  "gethostname",
  "objc2",
  "objc2-foundation",
@@ -1479,7 +1474,6 @@ dependencies = [
  "flint-core",
  "flint-crypto",
  "flint-index",
- "flint-md-parse",
  "flint-store-fs",
  "tempfile",
  "walkdir",
