@@ -73,6 +73,8 @@ See [`docs/cli.md`](docs/cli.md). The app and the CLI share the same list of sto
 
 ## Tests
 
+If you have [just](https://github.com/casey/just) installed, `just` lists the common tasks (`just test`, `just e2e`, `just dev`, `just android`, ...) and each one is a thin wrapper over the commands below.
+
 ```sh
 cargo test --workspace         # everything that needs no network or real keys
 cargo clippy --workspace --all-targets
