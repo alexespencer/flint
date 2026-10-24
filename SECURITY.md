@@ -18,7 +18,7 @@ Flint is a **personal project and has not been independently audited.** It is bu
 - **Folders whose names start with a dot** (`.git`, `.obsidian`, ...) are neither encrypted nor synced; they stay readable in the store folder.
 - **A device that is unlocked, or malware running as you,** can read what the app can. Touch ID and fingerprint unlock gate _the app's_ use of a stored key; on macOS the operating system does not enforce that gate (Android's hardware-backed key does). Keys are removed from the keychain on lock but not yet zeroed in the app's memory.
 - **Plaintext files dropped into the store folder** are readable until the app encrypts them in place (at the next sync, a moment after they stop changing).
-- **Windows** does not yet keep secrets between launches (see the [roadmap](docs/roadmap.md)).
+- **Windows** keeps secrets in the Credential Manager, which protects them from other Windows users but not from other programs running as you.
 - Nothing here defends against someone who can modify the app itself.
 
 ## Reporting a problem

@@ -12,7 +12,12 @@ fn secrets() -> flint_registry::KeychainSecrets {
     flint_registry::KeychainSecrets::new("dev.flint")
 }
 
-#[cfg(not(target_os = "macos"))]
+#[cfg(windows)]
+fn secrets() -> flint_registry::CredentialSecrets {
+    flint_registry::CredentialSecrets::new("dev.flint").expect("the Windows Credential Manager")
+}
+
+#[cfg(not(any(target_os = "macos", windows)))]
 fn secrets() -> flint_registry::MemorySecrets {
     // No platform secret store is wired up yet, so nothing is remembered between runs.
     flint_registry::MemorySecrets::new()

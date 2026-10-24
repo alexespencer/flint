@@ -20,7 +20,9 @@ pub use worker::Worker;
 type Secrets = flint_registry::KeychainSecrets;
 #[cfg(target_os = "android")]
 type Secrets = android_secrets::AndroidSecrets;
-#[cfg(not(any(target_os = "macos", target_os = "android")))]
+#[cfg(windows)]
+type Secrets = flint_registry::CredentialSecrets;
+#[cfg(not(any(target_os = "macos", target_os = "android", windows)))]
 type Secrets = flint_registry::MemorySecrets;
 
 /// The app service, as the worker thread holds it.
@@ -37,7 +39,13 @@ fn secrets(app: &tauri::AppHandle) -> Secrets {
     Secrets::new(app.clone(), config_dir(app))
 }
 
-#[cfg(not(any(target_os = "macos", target_os = "android")))]
+#[cfg(windows)]
+fn secrets(_: &tauri::AppHandle) -> Secrets {
+    // The same Credential Manager service as the CLI, so the two see the same stores and secrets.
+    Secrets::new("dev.flint").expect("the Windows Credential Manager")
+}
+
+#[cfg(not(any(target_os = "macos", target_os = "android", windows)))]
 fn secrets(_: &tauri::AppHandle) -> Secrets {
     Secrets::new()
 }

@@ -21,12 +21,12 @@ bunx @tauri-apps/cli@2 dev                         # run it with live reload
 
 ## What differs from macOS and Android
 
+- **Secrets.** The S3 secret key and a store's unlocked data key are kept in the Windows Credential Manager, one credential per secret under the service `dev.flint` (Control Panel → Credential Manager → Windows Credentials), for the current Windows user. They survive restarts and reinstalls, and the app and the command line share them. `cargo test -p flint-registry -- --ignored` round-trips the real Credential Manager.
 - **Paths.** A store path always uses `/` (it is the S3 key); a backslash in a name is refused, since on Windows it would be a separator. On macOS, Linux and Android a file with a backslash in its name is left out of the listing (not synced), rather than making the folder unreadable.
 - **File names.** Windows refuses names macOS, Linux and Android allow (`: ? * " < > |`, a trailing dot or space, `CON`, `NUL`, `COM1`...). `StorePath::windows_problem` finds them; `DiskFs` refuses to touch such a file on Windows with an error naming it.
 - **Saves.** The folder-flush after an atomic write is skipped (Windows cannot open a folder), and replacing a file that another program has open (a virus scanner, a sync client) is retried a few times.
 
 ## Still to do
 
-- Saved secrets: only macOS and Android persist them; on Windows the S3 secret key and unlocked keys are kept in memory, so every launch asks again. Needs a Credential Manager store behind `SecretStore`.
 - Skip-and-warn, instead of failing the whole listing, for notes whose names Windows cannot hold.
 - Windows Hello (the Touch ID / fingerprint equivalent).

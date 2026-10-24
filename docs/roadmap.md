@@ -6,7 +6,6 @@ What is built, and what is left. Flint is one person's project, so this is a lis
 
 **Windows**
 
-- Keep secrets between launches (Windows Credential Manager). Today the S3 secret key and unlocked keys last only until the app closes.
 - Skip and warn about notes whose names Windows cannot hold (`:`, `?`, a trailing dot, `CON`, ...), instead of failing the file.
 - Windows Hello, as the fingerprint equivalent.
 
