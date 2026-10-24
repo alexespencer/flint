@@ -539,6 +539,11 @@
     if (isAndroid && document.visibilityState === "hidden") lock(true);
   }
 
+  /** The `!` beside a note in the tree: opens that note's conflict. */
+  function openConflict(path: string) {
+    conflictOpen = store.conflicts.find((c) => c.path === path) ?? null;
+  }
+
   async function conflictsChanged() {
     conflictOpen = null;
     await loadFiles();
@@ -649,7 +654,7 @@
           </button>
         {/each}
       {:else}
-        <FileTree nodes={tree} selected={current?.path ?? null} {expanded} {conflicted} ontoggle={toggle} onopen={openNote} onmenu={showMenu} />
+        <FileTree nodes={tree} selected={current?.path ?? null} {expanded} {conflicted} ontoggle={toggle} onopen={openNote} onconflict={openConflict} onmenu={showMenu} />
         {#if files.length === 0}
           <p class="dim pad">
             No notes yet. Make one with New, or drop markdown files into<br /><code>{store.folder}</code>

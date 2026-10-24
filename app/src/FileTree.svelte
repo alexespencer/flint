@@ -10,6 +10,7 @@
     conflicted,
     ontoggle,
     onopen,
+    onconflict,
     onmenu,
     depth = 0,
   }: {
@@ -19,6 +20,8 @@
     conflicted: Set<string>;
     ontoggle: (path: string) => void;
     onopen: (path: string) => void;
+    /** The person clicked the `!` on a file that is in conflict. */
+    onconflict: (path: string) => void;
     /** The person asked for the actions on a file or folder (right-click, or its ⋯ button). */
     onmenu: (node: TreeNode, x: number, y: number) => void;
     depth?: number;
@@ -44,6 +47,7 @@
             {conflicted}
             {ontoggle}
             {onopen}
+            {onconflict}
             {onmenu}
             depth={depth + 1}
           />
@@ -61,8 +65,10 @@
           >
             <span class="chev"></span>
             {isConflictCopy(node.path) ? `${title(node.path).replace(/\.conflict-.*$/, "")} (conflict copy)` : title(node.path)}
-            {#if conflicted.has(node.path)}<span class="badge" title="Conflict">!</span>{/if}
           </button>
+          {#if conflicted.has(node.path)}
+            <button class="badge" title="In conflict: click to resolve" aria-label="Resolve the conflict in {node.name}" onclick={() => onconflict(node.path)}>!</button>
+          {/if}
           <button class="more" aria-label="Actions for {node.name}" onclick={(e) => onmenu(node, e.clientX, e.clientY)}>⋯</button>
         </div>
       {/if}
@@ -135,15 +141,19 @@
     font-size: 11px;
   }
   .badge {
-    margin-left: auto;
+    flex: none;
+    margin: 0 4px;
     background: var(--danger);
+    border-color: var(--danger);
     color: var(--bg);
     border-radius: 50%;
     width: 16px;
     height: 16px;
+    padding: 0;
     display: grid;
     place-items: center;
     font-size: 11px;
     font-weight: 700;
+    cursor: pointer;
   }
 </style>

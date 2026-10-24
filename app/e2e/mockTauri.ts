@@ -5,6 +5,8 @@ export interface Fixture {
   storeName: string;
   /** Path -> markdown, e.g. `"Projects/Flint.md"`. */
   notes: Record<string, string>;
+  /** Notes flagged as in conflict, with the path of the other version's copy. */
+  conflicts?: { path: string; copy: string | null }[];
 }
 
 /**
@@ -26,7 +28,7 @@ export async function mockTauri(page: Page, fixture: Fixture) {
       passwordless: false,
       files: Object.keys(fx.notes).length,
       awaitingEncryption: [],
-      conflicts: [],
+      conflicts: fx.conflicts ?? [],
     };
     const noSync = { adopted: 0, uploaded: 0, downloaded: 0, deletedRemote: 0, trashedLocal: 0, conflicts: [], refused: [], failed: [], settingsChanged: false, settingsError: null };
     const stem = (path: string) => path.replace(/^.*\//, "").replace(/\.md$/i, "");
@@ -35,6 +37,7 @@ export async function mockTauri(page: Page, fixture: Fixture) {
     const handlers: Record<string, (args: any) => unknown> = {
       list_stores: () => [store],
       switch_store: () => null,
+      resolve: () => null,
       files: () => Object.keys(fx.notes),
       folders: () => [],
       read_note: ({ path }) => fx.notes[path] ?? "",
