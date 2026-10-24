@@ -50,7 +50,7 @@ cargo test -p flint-remote delete_everything_the_contract_tests_left_behind -- -
 
 ## What the three backends taught us (2026-10-04)
 
-- **A real server passed all 17.** RustFS 1.0.1 (run once as a plain binary, then retired because AWS is the real target) passed everything, including the concurrency race: with eight writers racing, exactly one create wins and exactly one update from the same ETag wins. Its listings include ETags.
+- **A real server passed all 17.** RustFS 1.0.1 (run once as a plain binary, then retired in favour of testing against a real hosted bucket, Cloudflare R2) passed everything, including the concurrency race: with eight writers racing, exactly one create wins and exactly one update from the same ETag wins. Its listings include ETags.
 - **`s3s-fs` is fine for everything except races.** Its listings carry no ETags (a test pins this, so we notice if it changes), which is why `RemoteStore::list_with_etags` exists. It also creates a bucket folder on first write, unlike S3.
 - **Path characters.** `object_store` percent-encodes characters it cannot put in a key verbatim (`#`, `%`, `?`, ...). This is consistent on every device and round-trips (a test covers 26 awkward names), but the S3 key for `100%.md` is `100%25.md`. Ordinary names, spaces, apostrophes and Unicode are stored as they are.
 - **A gotcha fixed along the way.** In `object_store`, `with_client_options(...)` replaces the whole options value, so it silently undid an earlier `with_allow_http(true)`. `S3Config` now sets both in one place.

@@ -13,7 +13,7 @@ The core is Rust, shared by the CLI and a [Tauri 2](https://tauri.app) app with 
 
 ## What it does
 
-- **Notes** are plain markdown files in a folder, with `[[wikilinks]]`, backlinks, tags and full-text search.
+- **Notes** are plain markdown files in a folder, with `[[wikilinks]]`, backlinks and full-text search.
 - **The editor** shows markdown as you write it: headings, task-list checkboxes, inline code, fenced code blocks with syntax highlighting, and images (paste or drop one in and it is saved encrypted). The source of a line shows while the cursor is on it.
 - **Sync** is automatic, to your own S3 bucket, and a conflict is kept as two versions to resolve rather than merged.
 - **Light, dark or follow the system**, on every device.
