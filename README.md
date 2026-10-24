@@ -4,7 +4,10 @@ Encrypted markdown notes for macOS, Android and Windows with automated S3 sync. 
 
 The core is Rust, shared by the CLI and a [Tauri 2](https://tauri.app) app with a Svelte frontend.
 
-<!-- TODO: screenshot of the app (a note open, with the sidebar and backlinks) -->
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/img/note-dark.png">
+  <img src="docs/img/note-light.png" alt="Flint with a note open: the file list on the left, the note in the middle with rendered headings, checkboxes and highlighted code, and backlinks on the right">
+</picture>
 
 **Status:** in development, and **not independently audited** (see [SECURITY.md](SECURITY.md)). The core, sync, command line, and the macOS, Android and Windows apps are built; nothing is signed yet. Windows has an installer (built by CI, see [`docs/windows.md`](docs/windows.md)). For macOS and Android, build from source for now (below); a `.dmg` installer and an Android app that updates itself are planned. What is built and what is left: [docs/roadmap.md](docs/roadmap.md).
 
@@ -15,7 +18,7 @@ The core is Rust, shared by the CLI and a [Tauri 2](https://tauri.app) app with 
 - **Sync** is automatic, to your own S3 bucket, and a conflict is kept as two versions to resolve rather than merged.
 - **Light, dark or follow the system**, on every device.
 
-<!-- TODO: second screenshot, e.g. the conflict view or the dark theme -->
+<img src="docs/img/settings.png" alt="Flint's settings: where new notes and pasted pictures go, and unlock options" width="520">
 
 ## What you need
 
@@ -80,6 +83,8 @@ cargo test --workspace         # everything that needs no network or real keys
 cargo clippy --workspace --all-targets
 cd app && bun run check && bun run test
 ```
+
+The browser tests (`just e2e`) run the frontend in Chromium with the Tauri side faked, check how markdown renders, and `just screenshots` updates the screenshots. For the first run, `just browsers` downloads the chromium browser that's required.
 
 Opt-in tests (they touch real things, so they are `#[ignore]`d):
 
