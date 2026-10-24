@@ -10,3 +10,7 @@ target/
 # frontend build output and generated Tauri schemas
 app/dist/
 crates/flint-tauri/gen/schemas/
+
+# Playwright output
+app/e2e/results/
+app/playwright-report/
