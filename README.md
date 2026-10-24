@@ -96,21 +96,24 @@ The sync engine is also checked by a property-based simulation of three devices 
 
 ## How it fits together
 
-```
-app/                     Svelte + CodeMirror frontend
-crates/
-  flint-tauri            Tauri commands and events; no logic of its own
-  flint-cli              headless shell
-  flint-app-service      what every shell calls: create/join/unlock/sync/resolve, notes, search
-  flint-registry         stores on this device, secrets (keychain / Android Keystore)
-  flint-sync, -state     three-way sync planner and executor, baselines and conflicts
-  flint-remote           S3 access (object_store), conditional writes
-  flint-index            SQLCipher index: links, backlinks, search
-  flint-store-fs         the store folder; encryption of files, adoption of dropped-in files
-  flint-crypto           Argon2id, key wrapping, XChaCha20-Poly1305 file format
-  flint-md-parse, -core  markdown links/tags/frontmatter, shared types
-  tauri-plugin-keystore  Android Keystore and fingerprint, in Kotlin
-```
+| Where | What it does |
+| --- | --- |
+| `app/` | Svelte + CodeMirror frontend |
+| `crates/flint-tauri` | Tauri commands and events; no logic of its own |
+| `crates/flint-cli` | headless shell |
+| `crates/flint-app-service` | what every shell calls: create/join/unlock/sync/resolve, notes, search |
+| `crates/flint-registry` | stores on this device, secrets (macOS keychain, Windows Credential Manager, Android Keystore) |
+| `crates/flint-sync` | three-way sync planner and executor |
+| `crates/flint-sync-state` | baselines and conflict flags: what sync last agreed with S3, per file |
+| `crates/flint-remote` | S3 access (`object_store`), conditional writes |
+| `crates/flint-index` | SQLCipher index: links, backlinks, search |
+| `crates/flint-store-fs` | the store folder; encryption of files, adoption of dropped-in files |
+| `crates/flint-crypto` | Argon2id, key wrapping, XChaCha20-Poly1305 file format |
+| `crates/flint-settings` | the settings a store shares between devices, and how two copies merge |
+| `crates/flint-md-parse` | markdown links, tags and frontmatter |
+| `crates/flint-core` | shared types and errors |
+| `crates/flint-testkit` | test helpers and the end-to-end gates; used only from tests |
+| `crates/tauri-plugin-keystore` | Android Keystore and fingerprint, in Kotlin |
 
 Nothing below the shells imports Tauri, so the whole stack, encryption included, runs under `cargo test`.
 
@@ -123,11 +126,10 @@ Nothing below the shells imports Tauri, so the whole stack, encryption included,
 - [`docs/cli.md`](docs/cli.md): the command line
 - [`docs/s3-testing.md`](docs/s3-testing.md), [`docs/sync-testing.md`](docs/sync-testing.md): how storage and sync are tested
 - [`docs/build-notes.md`](docs/build-notes.md): SQLCipher on Android
-- [`docs/m0-findings.md`](docs/m0-findings.md): what the early spikes found (biometrics, Argon2 timing, Android)
 
 ## Security, in short
 
-Each store has its own password. The password is stretched with Argon2id into a key that unwraps a random data key kept in `.store/key.json`; every file's contents are encrypted with it (XChaCha20-Poly1305, the file's path authenticated), so S3 and a stolen device hold only ciphertext. File names and sizes are visible. Folders starting with `.` (such as `.git`) are never synced or encrypted. There is no password recovery.
+Each store has its own password. The password is stretched with Argon2id into a key that unwraps a random data key kept in `.store/key.json`; every file's contents are encrypted with it (XChaCha20-Poly1305, the file's path authenticated), so S3 and a stolen device hold only ciphertext. **File names and sizes are visible**. Folders starting with `.` (such as `.git`) are never synced or encrypted. There is no password recovery.
 
 ## License
 

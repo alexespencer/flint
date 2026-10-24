@@ -25,8 +25,10 @@ pub struct KdfParams {
 }
 
 impl KdfParams {
-    /// 256 MiB, 2 passes, 1 lane: about 0.6 s on the Galaxy S24-class phone and 0.2 s on an M-series
-    /// Mac (M0 spike). Memory is preferred over passes because memory is what limits GPU cracking.
+    /// 256 MiB, 2 passes, 1 lane: about 0.6 s on a Galaxy S24-class phone and 0.2 s on an M-series Mac.
+    /// Memory is preferred over passes because memory is what limits GPU cracking. A store made on a Mac must
+    /// unlock on the weakest phone, so do not go above this without timing a low-end device; the parameters
+    /// are stored per store in `key.json`, so they can be raised later without breaking existing stores.
     pub const DEFAULT: Self = Self {
         m_kib: 256 * 1024,
         t: 2,

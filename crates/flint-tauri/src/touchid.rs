@@ -1,9 +1,10 @@
 //! Touch ID on macOS through LocalAuthentication, with the Mac password as the fallback.
 //!
 //! This is a gate the app applies before it reads a key, not something the OS enforces: the key sits in
-//! the ordinary login keychain (no signing, no entitlement, no paid developer account; see
-//! `docs/m0-findings.md`). It keeps out someone who sits down at an unlocked Mac with the app closed, not
-//! code running as the same user.
+//! the ordinary login keychain. A keychain item with a biometric access control would make the OS enforce
+//! it, but that needs a signed app with an entitlement (a paid Apple Developer account), and an unsigned
+//! build is refused with `errSecMissingEntitlement`. The gate keeps out someone who sits down at an
+//! unlocked Mac with the app closed, not code running as the same user.
 //!
 //! The one `unsafe` in the app lives here: the Objective-C calls are `unsafe` in `objc2`.
 #![allow(unsafe_code)]
