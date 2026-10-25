@@ -9,7 +9,7 @@ The core is Rust, shared by the CLI and a [Tauri 2](https://tauri.app) app with 
   <img src="docs/img/note-light.png" alt="Flint with a note open: the file list on the left, the note in the middle with rendered headings, checkboxes and highlighted code, and backlinks on the right">
 </picture>
 
-**Status:** in development, and **not independently audited** (see [SECURITY.md](SECURITY.md)). The core, sync, command line, and the macOS, Android and Windows apps are built; nothing is signed yet. Windows has an installer (built by CI, see [`docs/windows.md`](docs/windows.md)). For macOS and Android, build from source for now (below); a `.dmg` installer and an Android app that updates itself are planned. What is built and what is left: [docs/roadmap.md](docs/roadmap.md).
+**Status:** in development, and **not independently audited** (see [SECURITY.md](SECURITY.md)). The core, sync, command line, and the macOS, Android and Windows apps are built; the Windows and macOS installers are not signed. Each [release](https://github.com/alexespencer/flint/releases) carries a Windows installer, a macOS disk image (Apple Silicon) and an Android APK, which [Obtainium](https://obtainium.imranr.dev) can keep up to date; how they are made and how to open the unsigned ones: [`docs/releasing.md`](docs/releasing.md). Or build from source (below). What is built and what is left: [docs/roadmap.md](docs/roadmap.md).
 
 ## What it does
 
@@ -122,6 +122,7 @@ Nothing below the shells imports Tauri, so the whole stack, encryption included,
 - [`docs/roadmap.md`](docs/roadmap.md): what is built and what is left
 - [`SECURITY.md`](SECURITY.md): what Flint protects and what it does not, and how to report a problem
 - [`docs/app.md`](docs/app.md): the desktop and Android apps, where things are stored
+- [`docs/releasing.md`](docs/releasing.md): making a release, the installers, and Android updates
 - [`docs/windows.md`](docs/windows.md): the Windows build and what differs there
 - [`docs/cli.md`](docs/cli.md): the command line
 - [`docs/s3-testing.md`](docs/s3-testing.md), [`docs/sync-testing.md`](docs/sync-testing.md): how storage and sync are tested

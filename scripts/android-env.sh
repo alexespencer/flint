@@ -1,12 +1,21 @@
 # Source this before building for Android:  . scripts/android-env.sh
 # Sets up the JDK, SDK and NDK, and puts the NDK's tools on PATH (SQLCipher builds OpenSSL from source,
 # which needs the cross compiler, ar and ranlib; see docs/build-notes.md).
-export JAVA_HOME="${JAVA_HOME:-$(/usr/libexec/java_home -v 17)}"
-export ANDROID_HOME="${ANDROID_HOME:-$HOME/Library/Android/sdk}"
+case "$(uname -s)" in
+  Darwin)
+    _host=darwin-x86_64
+    export JAVA_HOME="${JAVA_HOME:-$(/usr/libexec/java_home -v 17)}"
+    export ANDROID_HOME="${ANDROID_HOME:-$HOME/Library/Android/sdk}"
+    ;;
+  *)
+    _host=linux-x86_64 # a CI runner: it already has JAVA_HOME and ANDROID_HOME
+    export ANDROID_HOME="${ANDROID_HOME:-$HOME/Android/Sdk}"
+    ;;
+esac
 export NDK_VERSION="${NDK_VERSION:-30.0.14904198}"
 export NDK_HOME="$ANDROID_HOME/ndk/$NDK_VERSION"
 export ANDROID_NDK_HOME="$NDK_HOME"
-_ndk_bin="$NDK_HOME/toolchains/llvm/prebuilt/darwin-x86_64/bin"
+_ndk_bin="$NDK_HOME/toolchains/llvm/prebuilt/$_host/bin"
 export PATH="$_ndk_bin:$ANDROID_HOME/platform-tools:$PATH"
 export RANLIB="$_ndk_bin/llvm-ranlib"
 for _arch in aarch64:aarch64 armv7:armv7a x86_64:x86_64 i686:i686; do
@@ -18,4 +27,4 @@ for _arch in aarch64:aarch64 armv7:armv7a x86_64:x86_64 i686:i686; do
   export "AR_${_var}=$_ndk_bin/llvm-ar"
   export "CARGO_TARGET_$(echo "$_var" | tr a-z A-Z)_LINKER=$_ndk_bin/${_clang_name}30-clang"
 done
-unset _arch _rust _clang _triple _clang_name _var _ndk_bin
+unset _host _arch _rust _clang _triple _clang_name _var _ndk_bin

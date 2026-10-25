@@ -1,0 +1,161 @@
+# Builds the installers (Windows, macOS, Android) and runs the tests. See docs/releasing.md.
+#
+# - every push to any branch: builds each installer, which you can download from the run's "Artifacts", and
+#   runs the tests on Windows and macOS
+# - a tag like v0.1.2: the same, and then one GitHub release is made with every installer attached. It is made
+#   by one job, once everything has built, because a release here is immutable: files cannot be added to it
+#   after it is published.
+# - the "Run workflow" button on the Actions tab runs it by hand
+#
+# The repository is public, so the runners are free.
+name: Build
+
+on:
+  push:
+    branches: ["**"]
+    tags: ["v*"]
+  workflow_dispatch:
+
+# a newer push to the same branch makes the older, still-running one pointless
+concurrency:
+  group: build-${{ github.ref }}
+  cancel-in-progress: true
+
+# read-only by default; only the release job below can write
+permissions:
+  contents: read
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: The tag matches the app's version
+        if: startsWith(github.ref, 'refs/tags/v')
+        shell: bash
+        run: scripts/version.sh --tag "$GITHUB_REF_NAME"
+      - uses: oven-sh/setup-bun@v2
+      - name: Rust (the version is pinned in rust-toolchain.toml)
+        run: rustup show
+      - uses: Swatinem/rust-cache@v2
+      # SQLCipher builds OpenSSL from source: it needs NASM, Perl (already on the runner) and the MSVC tools
+      - uses: ilammy/setup-nasm@v1
+      - uses: ilammy/msvc-dev-cmd@v1
+      - name: Frontend dependencies
+        working-directory: app
+        run: bun install --frozen-lockfile
+      - name: Build the installer
+        working-directory: crates/flint-tauri
+        run: bunx @tauri-apps/cli@2 build --bundles nsis
+      - uses: actions/upload-artifact@v4
+        with:
+          name: flint-windows-${{ github.sha }}
+          path: target/release/bundle/nsis/*.exe
+          if-no-files-found: error
+          retention-days: 30
+      # After the installer, so a failing test cannot stop it being built and uploaded. In the release profile,
+      # so the dependencies compiled for the installer (OpenSSL above all) are reused instead of built again.
+      # flint-tauri is left out: it has two small thread tests, and including it would build Tauri a second
+      # time with different features. --no-fail-fast: a Windows run should report every failure, not just the first.
+      - name: Tests (release profile)
+        run: cargo test --release --workspace --exclude flint-tauri --no-fail-fast
+
+  macos:
+    runs-on: macos-latest # Apple Silicon
+    steps:
+      - uses: actions/checkout@v4
+      - name: The tag matches the app's version
+        if: startsWith(github.ref, 'refs/tags/v')
+        run: scripts/version.sh --tag "$GITHUB_REF_NAME"
+      - uses: oven-sh/setup-bun@v2
+      - name: Rust (the version is pinned in rust-toolchain.toml)
+        run: rustup show
+      - uses: Swatinem/rust-cache@v2
+      - name: Frontend dependencies
+        working-directory: app
+        run: bun install --frozen-lockfile
+      # Not signed or notarised (there is no Apple Developer account), so it has to be opened with
+      # System Settings -> Privacy & Security -> Open Anyway the first time; see docs/releasing.md
+      - name: Build the disk image
+        working-directory: crates/flint-tauri
+        run: bunx @tauri-apps/cli@2 build --bundles dmg
+      - uses: actions/upload-artifact@v4
+        with:
+          name: flint-macos-${{ github.sha }}
+          path: target/release/bundle/dmg/*.dmg
+          if-no-files-found: error
+          retention-days: 30
+      - name: Tests (release profile)
+        run: cargo test --release --workspace --exclude flint-tauri --no-fail-fast
+
+  android:
+    runs-on: ubuntu-latest
+    env:
+      NDK_VERSION: 30.0.14904198
+      TAURI: bunx @tauri-apps/cli@2
+    steps:
+      - uses: actions/checkout@v4
+      - name: The tag matches the app's version
+        if: startsWith(github.ref, 'refs/tags/v')
+        run: scripts/version.sh --tag "$GITHUB_REF_NAME"
+      # Phones update from a release only if it is signed with the same key every time (docs/releasing.md),
+      # so a release is refused without the key. Any other build is signed with a throwaway debug key.
+      - name: The release key is available
+        if: startsWith(github.ref, 'refs/tags/v')
+        env:
+          KEYSTORE: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+        run: |
+          [ -n "$KEYSTORE" ] || { echo "the ANDROID_KEYSTORE_BASE64 secret is not set: see docs/releasing.md" >&2; exit 1; }
+      - uses: oven-sh/setup-bun@v2
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+      - name: Rust (the version is pinned in rust-toolchain.toml)
+        run: rustup show
+      - uses: Swatinem/rust-cache@v2
+      - name: Android SDK and NDK
+        run: |
+          yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --licenses >/dev/null || true
+          "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" "ndk;$NDK_VERSION" "platforms;android-36" "build-tools;36.0.0"
+      - name: Build and sign the app
+        env:
+          ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          FLINT_KEYSTORE_PASS: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          FLINT_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          FLINT_KEY_PASS: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        run: |
+          if [ -n "$ANDROID_KEYSTORE_BASE64" ]; then
+            echo "$ANDROID_KEYSTORE_BASE64" | base64 -d > "$RUNNER_TEMP/release.keystore"
+            export FLINT_KEYSTORE="$RUNNER_TEMP/release.keystore"
+          fi
+          apk=$(scripts/android-apk.sh | tail -n 1)
+          mkdir -p dist
+          cp "$apk" "dist/Flint_$(scripts/version.sh)_android-arm64.apk"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: flint-android-${{ github.sha }}
+          path: dist/*.apk
+          if-no-files-found: error
+          retention-days: 30
+
+  # A tag only: one release with every installer, made once all of them have built and the tests passed.
+  release:
+    needs: [windows, macos, android]
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: flint-*-${{ github.sha }}
+          merge-multiple: true
+          path: installers
+      - uses: softprops/action-gh-release@v2
+        with:
+          files: installers/*
+          generate_release_notes: true

@@ -29,9 +29,9 @@ What is built, and what is left. Flint is one person's project, so this is a lis
 
 **Releases**
 
-- Build a signed Android APK in CI and publish it with releases (for example for updating through Obtainium), and a smaller release profile (strip symbols, link-time optimisation; the APK is about 33 MB today).
-- A macOS build in CI (needs a decision on signing), published as a `.dmg` installer.
-- Automatic updates for the Android app.
+- A smaller release profile (strip symbols, link-time optimisation; the APK is about 33 MB today).
+- A `.dmg` for Intel Macs (today's is Apple Silicon only). The Windows and macOS installers are not signed.
+- Self-updating Mac and Windows apps (Tauri's updater plugin; Android updates through Obtainium already, see [`releasing.md`](releasing.md)).
 
 ## Later
 

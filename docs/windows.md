@@ -4,10 +4,9 @@ Status: **being ported.** The build runs on GitHub Actions. Tauri's Windows inst
 
 ## Getting an installer
 
-`.github/workflows/windows.yml` runs on every push and on every tag `v*`, and by hand from the Actions tab:
+Tagged releases have it attached: [Releases](https://github.com/alexespencer/flint/releases) (how a release is made: [`releasing.md`](releasing.md)). Every push also builds one, in the `windows` job of `.github/workflows/build.yml`:
 
-- one job builds `Flint_<version>_x64-setup.exe` (download it from the run's **Artifacts**, kept 30 days), then runs `cargo test --release --workspace --no-fail-fast` on Windows. The tests run after the installer is uploaded, in the release profile, so they reuse what the installer build compiled (OpenSSL takes the longest); `flint-tauri` is left out of them;
-- for a tag (`git tag v0.1.0 && git push --tags`) the installer is also attached to the GitHub release.
+- it builds `Flint_<version>_x64-setup.exe` (download it from the run's **Artifacts**, kept 30 days), then runs `cargo test --release --workspace --no-fail-fast` on Windows. The tests run after the installer is uploaded, in the release profile, so they reuse what the installer build compiled (OpenSSL takes the longest); `flint-tauri` is left out of them.
 
 The installer is unsigned: Windows SmartScreen says "Windows protected your PC", then **More info → Run anyway**. It installs the WebView2 runtime if the machine lacks it.
 

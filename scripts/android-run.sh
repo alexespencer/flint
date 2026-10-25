@@ -4,10 +4,7 @@
 #   scripts/android-run.sh --debug    debug build (a few hundred MB: debug symbols, but easier to debug)
 #   scripts/android-run.sh --logs     also follow the app's log afterwards (can be combined with --debug)
 #
-# The release APK comes out of the build unsigned, and Android will not install an unsigned APK, so it is
-# aligned and signed here with the standard debug key (~/.android/debug.keystore). That is only for your own
-# phone: it is the same key the debug builds use, so release and debug builds install over each other, and
-# keep the store data. A build for anyone else needs a real release key.
+# The build and signing are scripts/android-apk.sh (which says which key signs it); this adds the install and start.
 set -euo pipefail
 cd "$(dirname "$0")/.."
 . scripts/android-env.sh
@@ -21,20 +18,7 @@ for arg in "$@"; do
   esac
 done
 
-(cd app && bun install --frozen-lockfile >/dev/null)
-
-if [ "$mode" = debug ]; then
-  (cd crates/flint-tauri && cargo tauri android build --debug --apk --target aarch64)
-  apk=crates/flint-tauri/gen/android/app/build/outputs/apk/universal/debug/app-universal-debug.apk
-else
-  (cd crates/flint-tauri && cargo tauri android build --apk --target aarch64)
-  out=crates/flint-tauri/gen/android/app/build/outputs/apk/universal/release
-  tools="$ANDROID_HOME/build-tools/$(ls "$ANDROID_HOME/build-tools" | sort -V | tail -1)"
-  "$tools/zipalign" -p -f 4 "$out/app-universal-release-unsigned.apk" "$out/aligned.apk"
-  "$tools/apksigner" sign --ks "$HOME/.android/debug.keystore" --ks-pass pass:android --key-pass pass:android \
-    --out "$out/flint-release.apk" "$out/aligned.apk"
-  apk="$out/flint-release.apk"
-fi
+apk=$(scripts/android-apk.sh $([ "$mode" = debug ] && echo --debug) | tail -n 1)
 
 echo "installing $apk ($(du -h "$apk" | cut -f1))"
 if ! result=$(adb install -r "$apk" 2>&1); then
