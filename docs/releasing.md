@@ -11,7 +11,7 @@ A release is a git tag. Pushing one builds the Windows installer, the macOS disk
 ## The installers
 
 - **Windows** (`Flint_<version>_x64-setup.exe`): not signed, so SmartScreen says "Windows protected your PC": **More info → Run anyway**.
-- **macOS** (`Flint_<version>_aarch64.dmg`, Apple Silicon only): not signed or notarised (that needs a paid Apple Developer account), so macOS refuses it the first time. Drag Flint to Applications, try to open it, then **System Settings → Privacy & Security → Open Anyway**. Or in a terminal: `xattr -dr com.apple.quarantine /Applications/Flint.app`.
+- **macOS** (`Flint_<version>_aarch64.dmg`, Apple Silicon only): signed only *ad hoc* (`signingIdentity` is `-` in `tauri.conf.json`), not with a developer identity or notarised (that needs a paid Apple Developer account). An Apple Silicon Mac refuses a download with no signature at all as "damaged", so the ad-hoc signature is needed; with it, macOS instead says it cannot verify the developer. Drag Flint to Applications, try to open it, then **System Settings → Privacy & Security → Open Anyway**. If macOS still calls it damaged, remove the download flag in a terminal: `xattr -dr com.apple.quarantine /Applications/Flint.app`.
 - **Android** (`Flint_<version>_android-arm64.apk`): signed with the project's release key (below), so it installs over the previous release.
 
 ## Android: the release key, and updates
