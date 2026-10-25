@@ -1,5 +1,6 @@
 <script lang="ts">
   import { untrack } from "svelte";
+  import { getVersion } from "@tauri-apps/api/app";
   import PathDialog from "./PathDialog.svelte";
   import { api, errorMessage, isAndroid, type BiometricState, type SettingsInfo, type StoreInfo } from "./lib/api";
   import { removeStoreFlow } from "./lib/storeActions";
@@ -56,6 +57,10 @@
       newNoteFolder = settings.newNoteFolder;
     }
   }
+  let version = $state("");
+  $effect(() => {
+    getVersion().then((v) => (version = v), () => (version = ""));
+  });
   let biometric = $state<BiometricState | null>(null);
   let busy = $state(false);
   let error = $state("");
@@ -178,6 +183,12 @@
           </select>
         </label>
         {#if isAndroid}<p class="dim small">The app also locks as soon as you leave it.</p>{/if}
+
+        <p class="group dim spaced">About</p>
+        <div class="row">
+          <span>Version</span>
+          <span class="dim">{version || "…"}</span>
+        </div>
       {:else}
         <ul class="stores">
           {#each stores as s (s.id)}

@@ -55,6 +55,7 @@ export async function mockTauri(page: Page, fixture: Fixture) {
       resolve_link: ({ target }) => Object.keys(fx.notes).find((path) => stem(path) === target) ?? null,
       biometric_state: () => ({ available: false, enabled: false }),
       "plugin:window|set_theme": () => null,
+      "plugin:app|version": () => "0.0.0",
     };
 
     const internals = {
