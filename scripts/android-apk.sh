@@ -10,11 +10,10 @@
 #   phone: the same key the debug builds use, so release and debug builds install over each other and keep
 #   the store data. An APK for anyone else needs a real release key, and the same one every time, or phones
 #   refuse the update.
-# TAURI overrides the Tauri CLI command (default: cargo tauri).
+# It needs `cargo tauri` (cargo install tauri-cli --version "^2" --locked): Gradle runs it itself.
 set -euo pipefail
 cd "$(dirname "$0")/.."
 . scripts/android-env.sh
-tauri=${TAURI:-cargo tauri}
 
 mode=release
 [ "${1:-}" = "--debug" ] && mode=debug
@@ -22,12 +21,12 @@ mode=release
 (cd app && bun install --frozen-lockfile >/dev/null)
 
 if [ "$mode" = debug ]; then
-  (cd crates/flint-tauri && $tauri android build --debug --apk --target aarch64) >&2
+  (cd crates/flint-tauri && cargo tauri android build --debug --apk --target aarch64) >&2
   echo crates/flint-tauri/gen/android/app/build/outputs/apk/universal/debug/app-universal-debug.apk
   exit 0
 fi
 
-(cd crates/flint-tauri && $tauri android build --apk --target aarch64) >&2
+(cd crates/flint-tauri && cargo tauri android build --apk --target aarch64) >&2
 out=crates/flint-tauri/gen/android/app/build/outputs/apk/universal/release
 tools="$ANDROID_HOME/build-tools/$(ls "$ANDROID_HOME/build-tools" | sort -V | tail -1)"
 

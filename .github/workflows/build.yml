@@ -95,7 +95,6 @@ jobs:
     runs-on: ubuntu-latest
     env:
       NDK_VERSION: 30.0.14904198
-      TAURI: bunx @tauri-apps/cli@2
     steps:
       - uses: actions/checkout@v4
       - name: The tag matches the app's version
@@ -117,11 +116,16 @@ jobs:
       - name: Rust (the version is pinned in rust-toolchain.toml)
         run: rustup show
       - uses: Swatinem/rust-cache@v2
+      # Gradle runs `cargo tauri android android-studio-script` itself, so the cargo subcommand has to be
+      # installed (the cache above keeps it between runs)
+      - name: The Tauri command line
+        run: command -v cargo-tauri || cargo install tauri-cli --version "^2" --locked
       - name: Android SDK and NDK
         run: |
           yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --licenses >/dev/null || true
           "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" "ndk;$NDK_VERSION" "platforms;android-36" "build-tools;36.0.0"
       - name: Build and sign the app
+        shell: bash # with pipefail, so a failed build is not hidden by the `| tail` below
         env:
           ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
           FLINT_KEYSTORE_PASS: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
